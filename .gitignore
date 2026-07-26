@@ -1,0 +1,47 @@
+# Secrets
+outputs/work/keys
+outputs/work/.gladia_keys
+outputs/work/deeplkey.txt
+outputs/work/deepl_key
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Runtime state and logs
+outputs/work/run_all_state.json
+outputs/work/run_all_state.json.bad
+outputs/work/run_all_state.json.bad.*
+outputs/work/run_all.log
+outputs/work/RESULT_*.log
+outputs/work/RESULT_LATEST.log
+outputs/work/*.log
+outputs/work/run_all.auto.*
+outputs/work/run_one_*
+
+# Generated work products
+outputs/work/chunks/
+outputs/work/test_*/
+outputs/work/*/gladia_raw.job_id
+outputs/work/*/gladia_raw.json
+outputs/work/*/gladia_zh.json
+outputs/work/*/gladia_zh.json.bad
+outputs/work/*/utt_clean.json
+outputs/work/*/translations.py
+outputs/work/*/en_lines.txt
+outputs/work/*/*.srt
+
+# Historical backups and transient outputs
+outputs/work/*.bak
+outputs/work/*.bak.*
+outputs/work/*.truncated.bak
+outputs/work/utt_*.json
+outputs/work/gladia_raw.json
+outputs/*.srt
+outputs/*.srt.bak.*
+
+# Local review/reference dumps
+outputs/_review/
