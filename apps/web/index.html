@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>video2text Web</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <p class="eyebrow">video2text web</p>
+        <h1>Media to transcript, web surface</h1>
+        <p class="lede">
+          This web app is the cloud-facing companion to the desktop product. The current build
+          exposes API health, supported formats, and the first request contract for future remote
+          transcription jobs.
+        </p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Runtime Status</h2>
+          <button id="refresh-status" type="button">Refresh</button>
+        </div>
+        <pre id="status-output">Loading...</pre>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Submit Placeholder</h2>
+          <span class="tag">API contract only</span>
+        </div>
+        <form id="transcribe-form" class="form">
+          <label>
+            Input Mode
+            <select id="input-mode" name="input_mode">
+              <option value="upload">Upload file</option>
+              <option value="url">Media URL</option>
+            </select>
+          </label>
+          <label id="upload-field">
+            Media File
+            <input
+              id="source-file"
+              name="source_file"
+              type="file"
+              accept=".m4a,.mp3,.wav,.aac,.flac,.ogg,.wma,.m4b,.mp4,.mov,.mkv,.avi,.wmv,.flv,.webm,.m4v"
+            />
+          </label>
+          <label id="url-field" hidden>
+            Source URL
+            <input id="source-url" name="source_url" type="url" placeholder="https://example.com/media.mp4" />
+          </label>
+          <label>
+            Output Format
+            <select id="output-format" name="output_format">
+              <option value="txt">txt</option>
+              <option value="srt">srt</option>
+            </select>
+          </label>
+          <label class="checkbox">
+            <input id="translate" name="translate" type="checkbox" checked />
+            Translate to Chinese
+          </label>
+          <button type="submit">Validate Request</button>
+        </form>
+        <pre id="transcribe-output">No request submitted yet.</pre>
+      </section>
+    </main>
+
+    <script src="./web.js"></script>
+  </body>
+  </html>

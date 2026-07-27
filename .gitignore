@@ -3,6 +3,8 @@ outputs/work/keys
 outputs/work/.gladia_keys
 outputs/work/deeplkey.txt
 outputs/work/deepl_key
+config/gladia_keys.txt
+config/deepl_key.txt
 .env
 
 # Python cache
@@ -23,6 +25,8 @@ outputs/work/run_all.auto.*
 outputs/work/run_one_*
 
 # Generated work products
+outputs/work/jobs/
+outputs/work/sandbox_*/
 outputs/work/chunks/
 outputs/work/test_*/
 outputs/work/*/gladia_raw.job_id
@@ -45,3 +49,10 @@ outputs/*.srt.bak.*
 
 # Local review/reference dumps
 outputs/_review/
+
+# Manual validation sandbox
+sandbox/
+
+# Local build artifacts
+build/
+release/

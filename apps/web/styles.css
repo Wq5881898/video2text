@@ -1,0 +1,153 @@
+:root {
+  --bg: #f2efe8;
+  --panel: rgba(255, 255, 255, 0.82);
+  --line: #d5cabb;
+  --ink: #1d2a34;
+  --muted: #596978;
+  --accent: #0d6d77;
+  --accent-soft: #d9f0ec;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at top left, #fff6d9 0, transparent 28%),
+    linear-gradient(135deg, #f4efe5 0%, #edf4f1 100%);
+}
+
+.page {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 40px 20px 80px;
+}
+
+.hero {
+  margin-bottom: 24px;
+}
+
+.eyebrow {
+  margin: 0 0 10px;
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0 0 14px;
+  font-size: clamp(36px, 6vw, 58px);
+  line-height: 0.96;
+}
+
+.lede {
+  max-width: 720px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+.panel {
+  margin-top: 20px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--panel);
+  backdrop-filter: blur(10px);
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.panel h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.form {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.form label {
+  display: grid;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.form input,
+.form select,
+.panel button {
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+}
+
+.checkbox {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+.checkbox input {
+  min-height: 18px;
+  width: 18px;
+  padding: 0;
+}
+
+.panel button {
+  cursor: pointer;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+
+pre {
+  overflow: auto;
+  margin: 0;
+  padding: 16px;
+  border-radius: 16px;
+  background: #152028;
+  color: #e8f2f8;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 720px) {
+  .page {
+    padding: 24px 14px 48px;
+  }
+
+  .panel-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

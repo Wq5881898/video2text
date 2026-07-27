@@ -35,7 +35,9 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).parent
+RUNTIME_ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+SCRIPT_DIR = RUNTIME_ROOT / "outputs" / "work" if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+CONFIG_DIR = RUNTIME_ROOT / "config" if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent.parent / "config"
 
 
 class KeyRotatorExhausted(Exception):
@@ -53,7 +55,7 @@ def load_keys():
     env = os.environ.get("GLADIA_API_KEY")
     if env:
         keys.append(env)
-    keys_file = SCRIPT_DIR / "keys"
+    keys_file = CONFIG_DIR / "gladia_keys.txt"
     if keys_file.exists():
         for line in keys_file.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -62,7 +64,7 @@ def load_keys():
             if line not in keys:
                 keys.append(line)
     if not keys:
-        print("ERROR: no key. set GLADIA_API_KEY env or add to keys file.", file=sys.stderr)
+        print("ERROR: no key. set GLADIA_API_KEY env or add to config/gladia_keys.txt.", file=sys.stderr)
         sys.exit(2)
     print(f"loaded {len(keys)} key(s)", flush=True)
     return keys

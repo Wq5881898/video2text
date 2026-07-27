@@ -18,7 +18,9 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).parent
+RUNTIME_ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+SCRIPT_DIR = RUNTIME_ROOT / "outputs" / "work" if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+CONFIG_DIR = RUNTIME_ROOT / "config" if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent.parent / "config"
 
 # 翻译端点 (免费层用 api-free.deepl.com, 不是 api.deepl.com)
 DEEPL_URL = "https://api-free.deepl.com/v2/translate"
@@ -32,15 +34,15 @@ RETRY_PAUSE = 5
 
 
 def load_key():
-    """从环境变量或 deeplkey.txt 读 key."""
+    """从环境变量或 config/deepl_key.txt 读 key."""
     k = os.environ.get("DEEPL_KEY", "").strip()
     if k:
         return k
-    p = SCRIPT_DIR / "deeplkey.txt"
+    p = CONFIG_DIR / "deepl_key.txt"
     if p.exists():
         return p.read_text(encoding="utf-8").strip()
     raise FileNotFoundError(
-        "DeepL key not found. Set DEEPL_KEY env var or create outputs/work/deeplkey.txt"
+        "DeepL key not found. Set DEEPL_KEY env var or create config/deepl_key.txt"
     )
 
 

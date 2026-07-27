@@ -1,0 +1,11 @@
+{
+  "name": "video2text-web",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Web surface for video2text",
+  "scripts": {
+    "dev": "python dev_server.py",
+    "build": "echo \"Static web shell does not require a build step yet.\"",
+    "deploy": "vercel --prod"
+  }
+}
