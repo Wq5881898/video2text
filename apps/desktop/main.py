@@ -259,31 +259,49 @@ class MainWindow(QMainWindow):
         outer.addWidget(subtitle)
 
         self.drop_frame = QFrame()
+        self.drop_frame.setObjectName("dropFrame")
         self.drop_frame.setFrameShape(QFrame.Shape.StyledPanel)
         self.drop_frame.setStyleSheet(
-            "QFrame { border: 2px dashed #5f7adb; border-radius: 14px; background: #f7f9ff; }"
+            "#dropFrame { border: 2px solid #5f7adb; border-radius: 14px; background: #f7f9ff; }"
         )
         drop_layout = QVBoxLayout(self.drop_frame)
         drop_layout.setContentsMargins(16, 16, 16, 16)
         drop_layout.setSpacing(10)
 
+        drop_hint_frame = QFrame()
+        drop_hint_frame.setObjectName("dropHintFrame")
+        drop_hint_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        drop_hint_frame.setStyleSheet(
+            "#dropHintFrame { border: 2px dashed #7c98e8; border-radius: 10px; background: rgba(255, 255, 255, 0.55); }"
+        )
+        drop_hint_layout = QVBoxLayout(drop_hint_frame)
+        drop_hint_layout.setContentsMargins(18, 10, 18, 10)
+        drop_hint_layout.setSpacing(4)
+
         drop_label = QLabel("Drag files or folders into this area")
         drop_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        drop_label.setStyleSheet("font-size: 16px; font-weight: 600; color: #243b6b;")
-        drop_layout.addWidget(drop_label)
+        drop_label.setStyleSheet("font-size: 16px; font-weight: 600; color: #243b6b; background: transparent;")
+        drop_hint_layout.addWidget(drop_label)
 
         helper = QLabel("Supported: m4a / mp3 / wav / mp4 / mov / mkv / avi / webm ...")
         helper.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        helper.setStyleSheet("color: #5a6b8b;")
-        drop_layout.addWidget(helper)
+        helper.setStyleSheet("color: #5a6b8b; background: transparent;")
+        drop_hint_layout.addWidget(helper)
+
+        drop_layout.addWidget(drop_hint_frame)
 
         self.file_list = DropListWidget()
         self.file_list.files_dropped.connect(self.add_paths)
         self.file_list.itemSelectionChanged.connect(self._update_retry_button)
         self.file_list.itemSelectionChanged.connect(self.refresh_task_details)
         self.file_list.itemDoubleClicked.connect(self.open_selected_result)
-        self.file_list.setStyleSheet("background: white; border: 1px solid #d7deef;")
-        self.file_list.setMinimumHeight(220)
+        self.file_list.setStyleSheet(
+            "QListWidget { background: transparent; border: none; }"
+            "QListWidget::item { background: rgba(255, 255, 255, 0.78); border: 1px solid #d7deef; "
+            "border-radius: 8px; padding: 8px 10px; margin: 4px 0; }"
+            "QListWidget::item:selected { background: #dbe7ff; border: 1px solid #7c98e8; color: #163b72; }"
+        )
+        self.file_list.setMinimumHeight(190)
         self.file_list.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.file_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.file_list.customContextMenuRequested.connect(self.show_file_context_menu)

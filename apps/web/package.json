@@ -7,5 +7,9 @@
     "dev": "python dev_server.py",
     "build": "echo \"Static web shell does not require a build step yet.\"",
     "deploy": "vercel --prod"
+  },
+  "dependencies": {
+    "@vercel/blob": "^2.6.1",
+    "@vercel/functions": "^3.7.6"
   }
 }

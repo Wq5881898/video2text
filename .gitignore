@@ -56,3 +56,6 @@ sandbox/
 # Local build artifacts
 build/
 release/
+
+# Web runtime artifacts
+apps/web/.runtime/

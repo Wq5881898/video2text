@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import cgi
 import importlib
 import json
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 
 ROOT = Path(__file__).resolve().parent
@@ -36,16 +37,55 @@ class WebDevHandler(SimpleHTTPRequestHandler):
             return
 
         if self.command == "POST":
+            content_type = self.headers.get("Content-Type", "")
             length = int(self.headers.get("Content-Length", "0"))
             body = self.rfile.read(length) if length > 0 else b""
 
             class Request:
-                def __init__(self, payload: bytes) -> None:
+                def __init__(self, payload: bytes, headers, query: dict, form: dict | None = None, files: dict | None = None) -> None:
                     self.body = payload
+                    self.headers = headers
+                    self.query = query
+                    self.form = form or {}
+                    self.files = files or {}
 
-            request = Request(body)
+            form_data: dict[str, object] = {}
+            file_data: dict[str, dict[str, object]] = {}
+            if content_type.startswith("multipart/form-data"):
+                environ = {
+                    "REQUEST_METHOD": "POST",
+                    "CONTENT_TYPE": content_type,
+                    "CONTENT_LENGTH": str(length),
+                }
+                from io import BytesIO
+
+                form = cgi.FieldStorage(
+                    fp=BytesIO(body),
+                    headers=self.headers,
+                    environ=environ,
+                )
+                if form.list:
+                    for field in form.list:
+                        if field.filename:
+                            file_data[field.name] = {
+                                "filename": field.filename,
+                                "content_type": field.type,
+                                "content": field.file.read(),
+                            }
+                        else:
+                            form_data[field.name] = field.value
+
+            request = Request(body, self.headers, parse_qs(parsed.query), form=form_data, files=file_data)
         else:
-            request = None
+            class Request:
+                def __init__(self, query: dict, headers) -> None:
+                    self.body = b""
+                    self.headers = headers
+                    self.query = query
+                    self.form = {}
+                    self.files = {}
+
+            request = Request(parse_qs(parsed.query), self.headers)
 
         payload = module.handler(request)
         status = 200 if payload.get("ok", False) else 400

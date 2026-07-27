@@ -2,13 +2,18 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
   "framework": null,
-  "routes": [
-    { "src": "/", "dest": "/index.html" },
-    { "src": "/api/(.*)", "dest": "/api/$1.py" }
+  "builds": [
+    { "src": "api/blob-upload.js", "use": "@vercel/node" },
+    { "src": "api/health.py", "use": "@vercel/python" },
+    { "src": "api/capabilities.py", "use": "@vercel/python" },
+    { "src": "api/transcribe.py", "use": "@vercel/python" },
+    { "src": "public/**", "use": "@vercel/static" }
   ],
-  "functions": {
-    "api/*.py": {
-      "runtime": "python3.11"
-    }
-  }
+  "routes": [
+    { "src": "/api/blob-upload", "dest": "api/blob-upload.js" },
+    { "src": "/api/health", "dest": "api/health.py" },
+    { "src": "/api/capabilities", "dest": "api/capabilities.py" },
+    { "src": "/api/transcribe", "dest": "api/transcribe.py" },
+    { "src": "/(.*)", "dest": "public/$1" }
+  ]
 }
