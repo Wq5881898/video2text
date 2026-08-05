@@ -1,23 +1,23 @@
 # video2text
 
-中文：`video2text` 是一个本地优先的音视频转文字工具。它支持音频和视频输入，视频会先提取音频，再进行英文转写，可选翻译成中文，最后导出 `txt` 或 `srt`。
+`video2text` 是一个本地优先的音视频转文字工具。它支持音频和视频输入，视频会先提取音频，再进行英文转写，可选翻译成中文，最后导出 `txt` 或 `srt`。
 
-English: `video2text` is a local-first media-to-transcript tool for Windows. It accepts audio or video input, extracts audio from video, runs English speech-to-text, optionally translates to Chinese, and exports either `txt` or `srt`.
+`video2text` is a local-first media-to-transcript tool for Windows. It accepts audio or video input, extracts audio from video, runs English speech-to-text, optionally translates to Chinese, and exports either `txt` or `srt`.
 
 ## 当前状态 | Current Status
 
-- 中文：当前仓库已经整理为“一个仓库，两套产品，共享核心”。
-- English: The repository is now organized as “one repo, two product surfaces, shared core”.
+- 当前仓库已经整理为“一个仓库，两套产品，共享核心”。
+- The repository is now organized as “one repo, two product surfaces, shared core”.
 
 - `apps/desktop`
-  - 中文：桌面客户端入口
-  - English: desktop client entry
+  - 桌面客户端入口
+  - desktop client entry
 - `apps/web`
-  - 中文：网页版骨架与后续部署入口
-  - English: web scaffold and future deployment entry
+  - 网页版骨架与后续部署入口
+  - web scaffold and future deployment entry
 - `packages/shared_core`
-  - 中文：桌面端与网页端共用的核心流程
-  - English: shared pipeline used by both desktop and web
+  - 桌面端与网页端共用的核心流程
+  - shared pipeline used by both desktop and web
 
 兼容层仍然保留：
 
@@ -28,23 +28,23 @@ These remain as compatibility wrappers during migration.
 
 ## 功能概览 | Features
 
-- 中文：支持单文件或批量处理。
-- English: Supports single-file and batch processing.
+- 支持单文件或批量处理。
+- Supports single-file and batch processing.
 
-- 中文：音频文件直接转写。
-- English: Audio files are transcribed directly.
+- 音频文件直接转写。
+- Audio files are transcribed directly.
 
-- 中文：视频文件先提取音频，再进入同一套转写流程。
-- English: Video files first extract audio, then enter the same transcript pipeline.
+- 视频文件先提取音频，再进入同一套转写流程。
+- Video files first extract audio, then enter the same transcript pipeline.
 
-- 中文：支持输出 `txt` 或 `srt`。
-- English: Supports `txt` and `srt` output.
+- 支持输出 `txt` 或 `srt`。
+- Supports `txt` and `srt` output.
 
-- 中文：支持“翻译为中文”开关。
-- English: Supports an optional “translate to Chinese” switch.
+- 支持“翻译为中文”开关。
+- Supports an optional “translate to Chinese” switch.
 
-- 中文：中间产物统一落到 job cache，便于复用和排障。
-- English: Intermediate artifacts are stored in a job cache for reuse and debugging.
+- 中间产物统一落到 job cache，便于复用和排障。
+- Intermediate artifacts are stored in a job cache for reuse and debugging.
 
 ## 桌面客户端 | Desktop App
 
@@ -62,50 +62,50 @@ D:\projectQ\.venv\Scripts\python.exe apps\desktop\main.py
 
 当前桌面端已具备：
 
-- 中文：拖拽文件和文件夹
-- English: drag and drop files or folders
+- 拖拽文件和文件夹
+- drag and drop files or folders
 
-- 中文：批量队列处理
-- English: batch queue processing
+- 批量队列处理
+- batch queue processing
 
-- 中文：输出格式选择 `txt` / `srt`
-- English: output format selection `txt` / `srt`
+- 输出格式选择 `txt` / `srt`
+- output format selection `txt` / `srt`
 
-- 中文：翻译开关
-- English: translation toggle
+- 翻译开关
+- translation toggle
 
-- 中文：输出目录自动跟随输入目录，支持手动修改
-- English: output folder auto-follows the input folder, with manual override
+- 输出目录自动跟随输入目录，支持手动修改
+- output folder auto-follows the input folder, with manual override
 
-- 中文：预设保存/加载
-- English: preset save/load
+- 预设保存/加载
+- preset save/load
 
-- 中文：队列状态恢复
-- English: queue restore
+- 队列状态恢复
+- queue restore
 
-- 中文：环境检查
-- English: environment check
+- 环境检查
+- environment check
 
-- 中文：进度条和逐文件状态显示
-- English: progress bar and per-file status display
+- 进度条和逐文件状态显示
+- progress bar and per-file status display
 
-- 中文：运行日志
-- English: runtime log
+- 运行日志
+- runtime log
 
-- 中文：最近输出列表
-- English: recent outputs list
+- 最近输出列表
+- recent outputs list
 
-- 中文：任务详情面板
-- English: task details panel
+- 任务详情面板
+- task details panel
 
-- 中文：Job Cache / Recent Outputs / Task Details 已整理为标签页
-- English: Job Cache / Recent Outputs / Task Details are grouped into tabs
+- Job Cache / Recent Outputs / Task Details 已整理为标签页
+- Job Cache / Recent Outputs / Task Details are grouped into tabs
 
-- 中文：低频菜单已收纳进 `Other`
-- English: low-frequency actions are grouped under `Other`
+- 低频菜单已收纳进 `Other`
+- low-frequency actions are grouped under `Other`
 
-- 中文：新增 `Cleanup Cache`，用于清理全部中间产物
-- English: added `Cleanup Cache` to remove all intermediate artifacts
+- 新增 `Cleanup Cache`，用于清理全部中间产物
+- added `Cleanup Cache` to remove all intermediate artifacts
 
 ## Cleanup Cache 说明 | What Cleanup Cache Removes
 
@@ -153,25 +153,25 @@ D:\projectQ\.venv\Scripts\python.exe apps\desktop\main.py
 
 视频提取规则：
 
-- 中文：单声道直接拷贝
-- English: mono audio is copied directly
+- 单声道直接拷贝
+-  mono audio is copied directly
 
-- 中文：双声道或多声道取左声道，转为单声道 AAC
-- English: stereo or multi-channel audio keeps the left channel and encodes to mono AAC
+- 双声道或多声道取左声道，转为单声道 AAC
+- stereo or multi-channel audio keeps the left channel and encodes to mono AAC
 
 输出规则：
 
 - `txt`
-  - 中文：不翻译时输出英文文本
-  - English: English transcript when translation is off
-  - 中文：翻译开启时输出中英双语文本，中文在前，英文在后
-  - English: bilingual text when translation is on, Chinese first and English second
+  - 不翻译时输出英文文本
+  -  English transcript when translation is off
+  - 翻译开启时输出中英双语文本，中文在前，英文在后
+  - bilingual text when translation is on, Chinese first and English second
 
 - `srt`
-  - 中文：不翻译时输出英文字幕
-  - English: English subtitle when translation is off
-  - 中文：翻译开启时输出中英双语字幕，中文在前，英文在后
-  - English: bilingual subtitle when translation is on, Chinese first and English second
+  - 不翻译时输出英文字幕
+  - English subtitle when translation is off
+  - 翻译开启时输出中英双语字幕，中文在前，英文在后
+  - bilingual subtitle when translation is on, Chinese first and English second
 
 ## 目录结构 | Repository Structure
 
@@ -248,11 +248,11 @@ release\video2text\video2text\config\
 
 ## 网页版方向 | Web Direction
 
-- 中文：网页版与桌面版共用 `shared_core` 思路，但部署时会保持边界清晰。
-- English: The web app shares the `shared_core` direction with the desktop app, while keeping packaging and deployment boundaries clear.
+- 网页版与桌面版共用 `shared_core` 思路，但部署时会保持边界清晰。
+- The web app shares the `shared_core` direction with the desktop app, while keeping packaging and deployment boundaries clear.
 
-- 中文：桌面端优先解决本地处理和打包问题。
-- English: The desktop client is prioritized for local processing and packaging first.
+- 桌面端优先解决本地处理和打包问题。
+- The desktop client is prioritized for local processing and packaging first.
 
-- 中文：网页端后续用于在线入口和 Vercel 部署。
-- English: The web app is reserved for the online entry and future Vercel deployment.
+- 网页端后续用于在线入口和 Vercel 部署。
+- The web app is reserved for the online entry and future Vercel deployment.
