@@ -40,6 +40,49 @@ SCRIPT_DIR = RUNTIME_ROOT / "outputs" / "work" if getattr(sys, "frozen", False) 
 CONFIG_DIR = RUNTIME_ROOT / "config" if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent.parent / "config"
 
 
+class MissingGladiaKeyError(RuntimeError):
+    """Raised when no Gladia key can be found in any supported config location."""
+
+
+class GladiaUploadError(RuntimeError):
+    """Raised when upload fails."""
+
+
+class GladiaPollError(RuntimeError):
+    """Raised when polling fails or times out."""
+
+
+def candidate_config_dirs():
+    dirs = [CONFIG_DIR]
+    if getattr(sys, "frozen", False):
+        exe_path = Path(sys.executable).resolve()
+        dirs.extend(
+            [
+                exe_path.parent.parent / "config",
+                exe_path.parent.parent.parent / "config",
+                RUNTIME_ROOT / "outputs" / "work" / "keys",
+                exe_path.parent.parent / "outputs" / "work" / "keys",
+                exe_path.parent.parent.parent / "outputs" / "work" / "keys",
+            ]
+        )
+    else:
+        repo_root = Path(__file__).resolve().parent.parent.parent
+        dirs.append(repo_root / "outputs" / "work" / "keys")
+    unique = []
+    for item in dirs:
+        if item not in unique:
+            unique.append(item)
+    return unique
+
+
+def resolve_keys_file():
+    for config_dir in candidate_config_dirs():
+        keys_file = config_dir / "gladia_keys.txt"
+        if keys_file.exists() and keys_file.is_file():
+            return keys_file
+    return candidate_config_dirs()[0] / "gladia_keys.txt"
+
+
 class KeyRotatorExhausted(Exception):
     """rotator 走完所有 key 后抛出, 区别于 sys.exit(3) 的静默退出."""
     pass
@@ -55,7 +98,7 @@ def load_keys():
     env = os.environ.get("GLADIA_API_KEY")
     if env:
         keys.append(env)
-    keys_file = CONFIG_DIR / "gladia_keys.txt"
+    keys_file = resolve_keys_file()
     if keys_file.exists():
         for line in keys_file.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -64,8 +107,9 @@ def load_keys():
             if line not in keys:
                 keys.append(line)
     if not keys:
-        print("ERROR: no key. set GLADIA_API_KEY env or add to config/gladia_keys.txt.", file=sys.stderr)
-        sys.exit(2)
+        raise MissingGladiaKeyError(
+            f"no key. set GLADIA_API_KEY env or add to {keys_file}"
+        )
     print(f"loaded {len(keys)} key(s)", flush=True)
     return keys
 
@@ -287,8 +331,7 @@ def upload(rotator, src=None):
     status, data = _do_request(req, 180)
     print("upload status:", status, flush=True)
     if status >= 300:
-        print("UPLOAD ERROR:", data, file=sys.stderr)
-        sys.exit(1)
+        raise GladiaUploadError(f"upload failed: {status} {data}")
     return data["audio_url"]
 
 
@@ -367,10 +410,8 @@ def poll(rotator, job_id):
         if s == "done":
             return data["result"]
         if s == "error":
-            print("TRANSCRIPTION ERROR:", data, file=sys.stderr)
-            sys.exit(1)
-    print(f"TIMEOUT after {POLL_MAX_ITERS} iters (resume later)", file=sys.stderr, flush=True)
-    return None
+            raise GladiaPollError(f"transcription error: {data}")
+    raise GladiaPollError(f"timeout after {POLL_MAX_ITERS} iters for job {job_id}")
 
 
 def normalize(result):
@@ -422,7 +463,7 @@ if __name__ == "__main__":
         idx = find_working_key(rotator)
         if idx is None:
             print("ERROR: 所有 key 都不工作 (quota 爆 或 auth 错), 没法 submit", file=sys.stderr)
-            sys.exit(2)
+            raise MissingGladiaKeyError("all keys failed pre-check (quota/auth/network), cannot submit")
         rotator.use(idx)
         print(f"[pre-check] 选 key#{idx+1}/{len(rotator.keys)} ...{rotator.current[-8:]}", flush=True)
 
@@ -435,7 +476,7 @@ if __name__ == "__main__":
     if result is None:
         print(f"poll timed out, job_id persisted at {job_id_file}", flush=True)
         print(f"resume later: python3 gladia.py <SRC> <OUT> --resume {job_id}", flush=True)
-        sys.exit(4)
+        raise GladiaPollError(f"poll timed out for job {job_id}; persisted at {job_id_file}")
 
     segments = normalize(result)
     with open(OUT, "w", encoding="utf-8") as f:

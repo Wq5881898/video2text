@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>video2text Job</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <p class="eyebrow">video2text job</p>
+        <h1>Background task status</h1>
+        <p class="lede">
+          This page stays tied to a specific job ID. You can refresh or reopen
+          it later without losing the result.
+        </p>
+      </section>
+
+      <section class="panel">
+        <div id="job-card" class="result-card">
+          <div class="result-grid">
+            <div>
+              <strong>Status</strong><span id="job-status">Loading</span>
+            </div>
+            <div><strong>Stage</strong><span id="job-stage">Waiting</span></div>
+            <div><strong>Job ID</strong><span id="job-id">-</span></div>
+            <div><strong>Updated</strong><span id="job-updated">-</span></div>
+          </div>
+          <p id="job-message" class="result-message">
+            Loading the current job status.
+          </p>
+        </div>
+
+        <div id="job-actions" class="result-actions" hidden>
+          <button id="download-result" type="button">Download Result</button>
+        </div>
+
+        <div id="result-preview" class="result-preview" hidden>
+          <h3>Preview</h3>
+          <pre id="result-preview-text">No preview yet.</pre>
+        </div>
+
+        <details class="tech-log">
+          <summary>Technical Log</summary>
+          <pre id="job-log">Waiting for status...</pre>
+        </details>
+
+        <div class="alt-mode">
+          <a class="alt-mode-link" href="/mobile"
+            >Create another background job</a
+          >
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="../job.js"></script>
+  </body>
+</html>

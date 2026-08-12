@@ -1,9 +1,6 @@
-const { handleUpload } = require("@vercel/blob/client");
+﻿const { handleUpload } = require("@vercel/blob/client");
 
-const ALLOWED_CONTENT_TYPES = [
-  "audio/*",
-  "video/*",
-];
+const ALLOWED_CONTENT_TYPES = ["audio/*", "video/*"];
 
 function readRequestBody(req) {
   if (req.body) {
@@ -36,19 +33,36 @@ module.exports = async function handler(req, res) {
 
   try {
     const body = await readRequestBody(req);
+    console.log("[blob-upload] request received", {
+      pathname: body?.pathname,
+      hasType: Boolean(body?.type),
+      type: body?.type,
+      multipart: body?.payload?.multipart,
+    });
     const json = await handleUpload({
       body,
       request: req,
-      onBeforeGenerateToken: async (pathname) => ({
-        allowedContentTypes: ALLOWED_CONTENT_TYPES,
-        maximumSizeInBytes: 2 * 1024 * 1024 * 1024,
-        addRandomSuffix: true,
-        tokenPayload: JSON.stringify({ pathname }),
-      }),
+      onBeforeGenerateToken: async (pathname) => {
+        console.log("[blob-upload] generating token", { pathname });
+        return {
+          allowedContentTypes: ALLOWED_CONTENT_TYPES,
+          maximumSizeInBytes: 2 * 1024 * 1024 * 1024,
+          addRandomSuffix: true,
+          tokenPayload: JSON.stringify({ pathname }),
+        };
+      },
     });
 
+    console.log("[blob-upload] success", {
+      hasResponse: Boolean(json),
+      keys: json ? Object.keys(json) : [],
+    });
     res.status(200).json(json);
   } catch (error) {
+    console.error("[blob-upload] failed", {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     res.status(400).json({
       ok: false,
       error: error instanceof Error ? error.message : String(error),

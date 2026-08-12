@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 from flask import Flask, jsonify, request as flask_request
@@ -107,6 +108,7 @@ def _request_from_flask():
 
 
 def handler(request=None):
+    request_id = f"req-{int(time.time() * 1000)}"
     payload = _payload_from_request(request)
     input_mode = str(payload.get("input_mode", "upload")).strip().lower()
     source_url = str(payload.get("source_url", "")).strip()
@@ -148,10 +150,12 @@ def handler(request=None):
         errors.append(f"output_format must be one of: {', '.join(sorted(OUTPUT_FORMATS))}")
 
     if errors:
+        print(f"[transcribe] request_id={request_id} status=invalid_request errors={errors}")
         return {
             "ok": False,
             "surface": "web",
             "status": "invalid_request",
+            "request_id": request_id,
             "errors": errors,
         }
 
@@ -166,11 +170,18 @@ def handler(request=None):
     )
 
     try:
+        print(
+            "[transcribe] "
+            f"request_id={request_id} start input_mode={input_mode} "
+            f"output_format={output_format} translate={translate} file_name={file_name or '-'} "
+            f"source_url={(source_url[:120] + '...') if len(source_url) > 120 else source_url or '-'}"
+        )
         if input_mode == "upload" and uploaded_file is None:
             return {
                 "ok": True,
                 "surface": "web",
                 "status": "validated_only",
+                "request_id": request_id,
                 "message": "Request contract accepted, but no uploaded bytes were received in this runtime.",
                 "request": request_data,
             }
@@ -179,6 +190,7 @@ def handler(request=None):
         file_content_type = None if uploaded_file is None else uploaded_file.get("content_type")
         source_name = str(uploaded_file.get("filename", file_name)) if uploaded_file is not None else file_name
         result = process_media(
+            request_id=request_id,
             input_mode=input_mode,
             output_format=output_format,
             translate=translate,
@@ -187,10 +199,16 @@ def handler(request=None):
             file_content_type=None if file_content_type is None else str(file_content_type),
             source_url=source_url or None,
         )
+        print(
+            "[transcribe] "
+            f"request_id={request_id} status=completed output={result.get('output_filename')} "
+            f"segments={result.get('segment_count')} translated={result.get('translated')}"
+        )
         return {
             "ok": True,
             "surface": "web",
             "status": "completed",
+            "request_id": request_id,
             "message": "Media processed successfully in the cloud runtime.",
             "request": request_data,
             "result": {
@@ -200,10 +218,12 @@ def handler(request=None):
             },
         }
     except Exception as exc:  # noqa: BLE001
+        print(f"[transcribe] request_id={request_id} status=failed error={exc}")
         return {
             "ok": False,
             "surface": "web",
             "status": "processing_failed",
+            "request_id": request_id,
             "error": str(exc),
         }
 

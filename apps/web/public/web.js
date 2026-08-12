@@ -40,31 +40,138 @@ async function refreshStatus() {
   }
 }
 
+let processingTimer = null;
+let processingStartedAt = 0;
+
+function stopProcessingTimer() {
+  if (processingTimer !== null) {
+    window.clearInterval(processingTimer);
+    processingTimer = null;
+  }
+}
+
+function formatElapsedSeconds() {
+  if (!processingStartedAt) {
+    return "0s";
+  }
+  const seconds = Math.max(
+    0,
+    Math.floor((Date.now() - processingStartedAt) / 1000),
+  );
+  return `${seconds}s`;
+}
+
+function renderPendingState(stage = "Preparing request", detail = "") {
+  const panel = document.getElementById("result-panel");
+  const box = document.getElementById("result-summary");
+  const actions = document.getElementById("result-actions");
+  const preview = document.getElementById("result-preview");
+  panel.hidden = false;
+  actions.hidden = true;
+  preview.hidden = true;
+  box.innerHTML = `
+    <div class="result-card">
+      <div class="result-grid">
+        <div><strong>Status</strong><span>Processing</span></div>
+        <div><strong>Stage</strong><span>${stage}</span></div>
+        <div><strong>Elapsed</strong><span>${formatElapsedSeconds()}</span></div>
+      </div>
+      <p class="result-message">${detail || "Processing your media. This can take a little while for longer files."}</p>
+    </div>
+  `;
+}
+
+function startProcessingTimer(stage, detail) {
+  processingStartedAt = Date.now();
+  stopProcessingTimer();
+  processingTimer = window.setInterval(() => {
+    renderPendingState(stage, detail);
+  }, 1000);
+}
+
+function updateProcessingStage(stage, detail = "") {
+  renderPendingState(stage, detail);
+}
+
+function renderResultSummary(payload, sourceKind) {
+  const panel = document.getElementById("result-panel");
+  const box = document.getElementById("result-summary");
+  const actions = document.getElementById("result-actions");
+  const preview = document.getElementById("result-preview");
+  const previewText = document.getElementById("result-preview-text");
+  panel.hidden = false;
+  stopProcessingTimer();
+
+  if (!payload?.ok || !payload?.result) {
+    const message =
+      payload?.message || payload?.error || "The request did not complete.";
+    box.innerHTML = `
+      <div class="result-card status-error">
+        <div class="result-grid">
+          <div><strong>Status</strong><span>Failed</span></div>
+          <div><strong>Source</strong><span>${sourceKind === "upload" ? "Local file" : sourceKind === "url" ? "URL" : "Unknown"}</span></div>
+        </div>
+        <p class="result-message">${message}</p>
+      </div>
+    `;
+    actions.hidden = true;
+    preview.hidden = true;
+    return;
+  }
+
+  const result = payload.result;
+  const previewLines = (result.output_text || "")
+    .split(/\r?\n/)
+    .slice(0, 8)
+    .join("\n");
+  window.__video2textLastResult = result;
+  box.innerHTML = `
+    <div class="result-card">
+      <div class="result-grid">
+        <div><strong>Status</strong><span>Completed</span></div>
+        <div><strong>Source</strong><span>${sourceKind === "upload" ? "Local file" : "URL"}</span></div>
+        <div><strong>Output</strong><span>${result.output_filename}</span></div>
+        <div><strong>Translation</strong><span>${result.translated ? "On" : "Off"}</span></div>
+      </div>
+      <p class="result-message">Your transcript is ready. Preview it below or download the full result.</p>
+    </div>
+  `;
+  previewText.textContent = previewLines || "Preview unavailable.";
+  actions.hidden = false;
+  preview.hidden = false;
+}
+
 async function submitPlaceholder(event) {
   event.preventDefault();
   const output = document.getElementById("transcribe-output");
-  const actions = document.getElementById("result-actions");
-  const inputMode = document.getElementById("input-mode").value;
   const sourceFile = document.getElementById("source-file").files[0];
   const sourceUrl = document.getElementById("source-url").value.trim();
   const outputFormat = document.getElementById("output-format").value;
   const translate = document.getElementById("translate").checked;
   window.__video2textLastResult = null;
-  actions.hidden = true;
-  output.textContent = "Submitting...";
+  output.textContent = "Starting request...";
+  startProcessingTimer(
+    "Preparing request",
+    "Checking your input and preparing the cloud request.",
+  );
 
   try {
     let result;
-    if (inputMode === "upload") {
-      if (!sourceFile) {
-        throw new Error("Please choose a media file first.");
-      }
+    if (sourceFile) {
+      updateProcessingStage(
+        "Uploading file",
+        "Uploading your media to cloud storage before transcription starts.",
+      );
       output.textContent = "Uploading media to cloud storage...";
       const blob = await uploadToBlob(sourceFile.name, sourceFile, {
         access: "public",
         handleUploadUrl: "./api/blob-upload",
         multipart: sourceFile.size > 5_000_000,
         onUploadProgress(progress) {
+          updateProcessingStage(
+            "Uploading file",
+            `Uploaded ${Math.round(progress.percentage)}% of your file.`,
+          );
           output.textContent = JSON.stringify(
             {
               stage: "blob_upload",
@@ -79,6 +186,10 @@ async function submitPlaceholder(event) {
           );
         },
       });
+      updateProcessingStage(
+        "Transcribing",
+        "Upload completed. The cloud runtime is transcribing your media now.",
+      );
       output.textContent = "Blob upload completed. Starting transcription...";
       result = await fetchJson("./api/transcribe", {
         method: "POST",
@@ -92,23 +203,32 @@ async function submitPlaceholder(event) {
         }),
       });
     } else {
+      if (!sourceUrl) {
+        throw new Error("Choose a local file or enter a media URL.");
+      }
+      updateProcessingStage(
+        "Transcribing",
+        "The cloud runtime is downloading and transcribing your source URL.",
+      );
+      output.textContent = "Transcribing from source URL...";
       result = await fetchJson("./api/transcribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          input_mode: inputMode,
+          input_mode: "url",
           source_url: sourceUrl,
           output_format: outputFormat,
           translate,
         }),
       });
     }
+
     output.textContent = JSON.stringify(
       { status: result.status, body: result.payload },
       null,
       2,
     );
-    renderResultSummary(result.payload);
+    renderResultSummary(result.payload, sourceFile ? "upload" : "url");
   } catch (error) {
     output.textContent = JSON.stringify(
       {
@@ -118,34 +238,14 @@ async function submitPlaceholder(event) {
       null,
       2,
     );
+    renderResultSummary(
+      {
+        ok: false,
+        message: error instanceof Error ? error.message : String(error),
+      },
+      sourceFile ? "upload" : sourceUrl ? "url" : "none",
+    );
   }
-}
-
-function renderResultSummary(payload) {
-  const box = document.getElementById("result-summary");
-  const actions = document.getElementById("result-actions");
-  if (!box) {
-    return;
-  }
-  if (!payload?.ok || !payload?.result) {
-    box.innerHTML = "";
-    box.hidden = true;
-    actions.hidden = true;
-    return;
-  }
-  const result = payload.result;
-  window.__video2textLastResult = result;
-  box.innerHTML = `
-    <div class="result-card">
-      <div><strong>Status</strong><span>Completed</span></div>
-      <div><strong>Type</strong><span>${result.media_type}</span></div>
-      <div><strong>Output</strong><span>${result.output_filename}</span></div>
-      <div><strong>Segments</strong><span>${result.segment_count}</span></div>
-      <div><strong>Translation</strong><span>${result.translated ? "Chinese + English" : "English only"}</span></div>
-    </div>
-  `;
-  box.hidden = false;
-  actions.hidden = false;
 }
 
 function downloadLastResult() {

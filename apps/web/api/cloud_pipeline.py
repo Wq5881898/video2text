@@ -290,6 +290,7 @@ def build_output_filename(source_name: str, output_format: str) -> str:
 
 def process_media(
     *,
+    request_id: str | None = None,
     input_mode: str,
     output_format: str,
     translate: bool,
@@ -298,6 +299,11 @@ def process_media(
     file_content_type: str | None = None,
     source_url: str | None = None,
 ) -> dict[str, object]:
+    log_prefix = f"[cloud_pipeline] request_id={request_id or '-'}"
+
+    def log(stage: str, detail: str) -> None:
+        print(f"{log_prefix} stage={stage} {detail}")
+
     source_name = resolve_source_name(input_mode, file_name, source_url)
     source_ext = Path(source_name).suffix.lower()
     if source_ext and source_ext not in SUPPORTED_EXTS:
@@ -306,22 +312,32 @@ def process_media(
     if input_mode == "upload":
         if file_bytes is None or file_name is None:
             raise ValueError("uploaded file content is missing")
+        log("upload_to_gladia", f"source_name={file_name} bytes={len(file_bytes)}")
         media_url = upload_media_bytes(file_name, file_bytes, file_content_type)
     else:
         if not source_url:
             raise ValueError("source_url is required")
+        log("download_source", f"source_url={source_url}")
         downloaded_name, downloaded_bytes, downloaded_type = download_media_bytes(source_url)
+        log("upload_to_gladia", f"source_name={downloaded_name} bytes={len(downloaded_bytes)}")
         media_url = upload_media_bytes(downloaded_name, downloaded_bytes, downloaded_type)
 
-    result = wait_for_transcription(submit_transcription(media_url))
+    log("submit_transcription", f"media_url={media_url[:120]}")
+    job_id = submit_transcription(media_url)
+    log("poll_transcription", f"job_id={job_id}")
+    result = wait_for_transcription(job_id)
     segments_en = extract_segments(result)
     if not segments_en:
         raise RuntimeError("No transcript segments were returned")
 
     media_type = "video" if source_ext in VIDEO_EXTS else "audio"
+    log("transcription_done", f"segments={len(segments_en)} media_type={media_type}")
     segments_zh = translate_segments(segments_en) if translate else None
+    if translate:
+        log("translation_done", f"segments={len(segments_zh or [])}")
     output_text = render_txt(segments_en, segments_zh) if output_format == "txt" else render_srt(segments_en, segments_zh)
     output_filename = build_output_filename(source_name, output_format)
+    log("render_done", f"output_filename={output_filename} output_format={output_format}")
 
     return {
         "media_type": media_type,

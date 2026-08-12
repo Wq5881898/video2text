@@ -12,9 +12,9 @@
         <p class="eyebrow">video2text web</p>
         <h1>Media to transcript, web surface</h1>
         <p class="lede">
-          This web app is the cloud-facing companion to the desktop product. It can now submit
-          media directly to the cloud runtime for transcript generation, optional Chinese
-          translation, and txt or srt output.
+          This web app is the cloud-facing companion to the desktop product. It
+          can now submit media directly to the cloud runtime for transcript
+          generation, optional Chinese translation, and txt or srt output.
         </p>
       </section>
 
@@ -24,7 +24,10 @@
             <section id="upload-card" class="entry-card is-active">
               <div class="entry-head">
                 <h3>Upload a local file</h3>
-                <p>Best when the media is on your computer. Large files upload to cloud storage first.</p>
+                <p>
+                  Best when the media is on your computer. Large files upload to
+                  cloud storage first.
+                </p>
               </div>
               <label id="upload-field" class="dropzone">
                 <input
@@ -37,18 +40,27 @@
                   <strong>Drop audio or video here</strong>
                   <small>or click to choose a file</small>
                 </span>
-                <span id="selected-file" class="selected-file">No file selected</span>
+                <span id="selected-file" class="selected-file"
+                  >No file selected</span
+                >
               </label>
             </section>
 
-            <section id="url-card" class="entry-card">
+            <section id="url-card" class="entry-card is-active">
               <div class="entry-head">
                 <h3>Process from a URL</h3>
-                <p>Best when the media already has a direct downloadable link.</p>
+                <p>
+                  Best when the media already has a direct downloadable link.
+                </p>
               </div>
               <label id="url-field">
                 Source URL
-                <input id="source-url" name="source_url" type="url" placeholder="https://example.com/media.mp4" />
+                <input
+                  id="source-url"
+                  name="source_url"
+                  type="url"
+                  placeholder="https://example.com/media.mp4"
+                />
               </label>
             </section>
           </div>
@@ -65,7 +77,9 @@
               <input id="translate" name="translate" type="checkbox" checked />
               <span>
                 <strong>Translate to Chinese</strong>
-                <small>Keep English transcript and add Chinese translation.</small>
+                <small
+                  >Keep English transcript and add Chinese translation.</small
+                >
               </span>
             </label>
           </div>
@@ -75,11 +89,21 @@
             <p class="submit-note">Single file in, single result out.</p>
           </div>
         </form>
-        <div id="result-summary" class="result-summary" hidden></div>
-        <div id="result-actions" class="result-actions" hidden>
-          <button id="download-result" type="button">Download Result</button>
+
+        <div id="result-panel" class="result-panel" hidden>
+          <div id="result-summary" class="result-summary"></div>
+          <div id="result-actions" class="result-actions" hidden>
+            <button id="download-result" type="button">Download Result</button>
+          </div>
+          <div id="result-preview" class="result-preview" hidden>
+            <h3>Preview</h3>
+            <pre id="result-preview-text">No preview yet.</pre>
+          </div>
+          <details class="tech-log">
+            <summary>Technical Log</summary>
+            <pre id="transcribe-output">No request submitted yet.</pre>
+          </details>
         </div>
-        <pre id="transcribe-output">No request submitted yet.</pre>
       </section>
 
       <details class="panel panel-compact diagnostics">
@@ -98,4 +122,4 @@
 
     <script type="module" src="./web.js"></script>
   </body>
-  </html>
+</html>

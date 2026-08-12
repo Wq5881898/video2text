@@ -4,6 +4,9 @@
   "framework": null,
   "builds": [
     { "src": "api/blob-upload.js", "use": "@vercel/node" },
+    { "src": "api/jobs-create.js", "use": "@vercel/node" },
+    { "src": "api/jobs-status.js", "use": "@vercel/node" },
+    { "src": "api/jobs-result.js", "use": "@vercel/node" },
     { "src": "api/health.py", "use": "@vercel/python" },
     { "src": "api/capabilities.py", "use": "@vercel/python" },
     { "src": "api/transcribe.py", "use": "@vercel/python" },
@@ -11,9 +14,14 @@
   ],
   "routes": [
     { "src": "/api/blob-upload", "dest": "api/blob-upload.js" },
+    { "src": "/api/jobs-create", "dest": "api/jobs-create.js" },
+    { "src": "/api/jobs-status", "dest": "api/jobs-status.js" },
+    { "src": "/api/jobs-result", "dest": "api/jobs-result.js" },
     { "src": "/api/health", "dest": "api/health.py" },
     { "src": "/api/capabilities", "dest": "api/capabilities.py" },
     { "src": "/api/transcribe", "dest": "api/transcribe.py" },
+    { "src": "/mobile", "dest": "public/mobile.html" },
+    { "src": "/jobs/(.*)", "dest": "public/job.html" },
     { "src": "/(.*)", "dest": "public/$1" }
   ]
 }

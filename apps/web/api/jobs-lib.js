@@ -60,7 +60,8 @@ async function downloadMedia(sourceUrl) {
   const arrayBuffer = await response.arrayBuffer();
   return {
     bytes: Buffer.from(arrayBuffer),
-    contentType: response.headers.get("content-type") || "application/octet-stream",
+    contentType:
+      response.headers.get("content-type") || "application/octet-stream",
   };
 }
 
@@ -75,7 +76,9 @@ async function uploadToGladia(filename, bytes, contentType) {
     body: form,
   });
   if (!response.ok) {
-    throw new Error(`Gladia upload failed: HTTP ${response.status} ${await response.text()}`);
+    throw new Error(
+      `Gladia upload failed: HTTP ${response.status} ${await response.text()}`,
+    );
   }
   const payload = await response.json();
   if (!payload.audio_url) {
@@ -110,7 +113,9 @@ async function submitTranscription(audioUrl) {
     }),
   });
   if (!response.ok) {
-    throw new Error(`Gladia submit failed: HTTP ${response.status} ${await response.text()}`);
+    throw new Error(
+      `Gladia submit failed: HTTP ${response.status} ${await response.text()}`,
+    );
   }
   const payload = await response.json();
   if (!payload.id) {
@@ -127,7 +132,9 @@ async function waitForTranscription(jobId) {
       },
     });
     if (!response.ok) {
-      throw new Error(`Gladia polling failed: HTTP ${response.status} ${await response.text()}`);
+      throw new Error(
+        `Gladia polling failed: HTTP ${response.status} ${await response.text()}`,
+      );
     }
     const payload = await response.json();
     if (payload.status === "done") {
@@ -169,7 +176,9 @@ async function translateBatch(texts) {
     body: params.toString(),
   });
   if (!response.ok) {
-    throw new Error(`DeepL translation failed: HTTP ${response.status} ${await response.text()}`);
+    throw new Error(
+      `DeepL translation failed: HTTP ${response.status} ${await response.text()}`,
+    );
   }
   const payload = await response.json();
   const translations = payload.translations || [];
@@ -192,7 +201,11 @@ async function translateSegments(segments) {
 
   for (const segment of segments) {
     const text = segment.text;
-    if (batch.length && (batch.length >= DEEPL_BATCH_SIZE || batchChars + text.length > DEEPL_MAX_CHARS)) {
+    if (
+      batch.length &&
+      (batch.length >= DEEPL_BATCH_SIZE ||
+        batchChars + text.length > DEEPL_MAX_CHARS)
+    ) {
       await flush();
     }
     batch.push(text);
@@ -210,7 +223,10 @@ function formatTimestamp(value) {
   const hours = Math.floor(value / 3600);
   const minutes = Math.floor((value % 3600) / 60);
   const seconds = (value % 60).toFixed(3).padStart(6, "0");
-  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${seconds}`.replace(".", ",");
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${seconds}`.replace(
+    ".",
+    ",",
+  );
 }
 
 function renderTxt(segmentsEn, segmentsZh) {
@@ -243,22 +259,60 @@ function renderSrt(segmentsEn, segmentsZh) {
 }
 
 function outputFilename(sourceName, outputFormat) {
-  const stem = sourceName.includes(".") ? sourceName.slice(0, sourceName.lastIndexOf(".")) : sourceName;
+  const stem = sourceName.includes(".")
+    ? sourceName.slice(0, sourceName.lastIndexOf("."))
+    : sourceName;
   return `${stem}.${outputFormat}`;
 }
 
-async function processJob(job) {
+async function processJob(job, options = {}) {
+  const onStage =
+    typeof options.onStage === "function" ? options.onStage : async () => {};
+
+  await onStage(
+    "download_source",
+    "Downloading the uploaded file from cloud storage.",
+  );
   const download = await downloadMedia(job.source_url);
-  const audioUrl = await uploadToGladia(job.file_name, download.bytes, download.contentType);
-  const transcriptionResult = await waitForTranscription(await submitTranscription(audioUrl));
+  await onStage(
+    "upload_to_gladia",
+    "Uploading the media to the speech engine.",
+    {
+      downloaded_bytes: download.bytes.length,
+    },
+  );
+  const audioUrl = await uploadToGladia(
+    job.file_name,
+    download.bytes,
+    download.contentType,
+  );
+  await onStage("submit_transcription", "Submitting the transcription job.");
+  const gladiaJobId = await submitTranscription(audioUrl);
+  await onStage(
+    "poll_transcription",
+    "Waiting for the speech engine to finish.",
+    {
+      gladia_job_id: gladiaJobId,
+    },
+  );
+  const transcriptionResult = await waitForTranscription(gladiaJobId);
   const segmentsEn = extractSegments(transcriptionResult);
   if (!segmentsEn.length) {
     throw new Error("No transcript segments were returned");
   }
+  await onStage(
+    "transcription_done",
+    `Transcript received with ${segmentsEn.length} segments.`,
+  );
   const segmentsZh = job.translate ? await translateSegments(segmentsEn) : null;
-  const outputText = job.output_format === "srt"
-    ? renderSrt(segmentsEn, segmentsZh)
-    : renderTxt(segmentsEn, segmentsZh);
+  if (job.translate) {
+    await onStage("translation_done", "Chinese translation completed.");
+  }
+  const outputText =
+    job.output_format === "srt"
+      ? renderSrt(segmentsEn, segmentsZh)
+      : renderTxt(segmentsEn, segmentsZh);
+  await onStage("render_done", "Formatting the final output file.");
   return {
     output_filename: outputFilename(job.file_name, job.output_format),
     output_text: outputText,

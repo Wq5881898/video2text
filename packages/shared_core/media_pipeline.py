@@ -15,9 +15,18 @@ from typing import Callable
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-RUNTIME_ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else REPO_ROOT
+APP_ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else REPO_ROOT
+
+
+def runtime_root() -> Path:
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS)
+    return REPO_ROOT
+
+
+RUNTIME_ROOT = runtime_root()
 WORK_ROOT = RUNTIME_ROOT / "outputs" / "work"
-CONFIG_ROOT = RUNTIME_ROOT / "config"
+CONFIG_ROOT = APP_ROOT / "config"
 if str(WORK_ROOT) not in sys.path:
     sys.path.insert(0, str(WORK_ROOT))
 
@@ -38,10 +47,40 @@ GLADIA_KEYS_PATH = CONFIG_ROOT / "gladia_keys.txt"
 DEEPL_KEY_PATH = CONFIG_ROOT / "deepl_key.txt"
 
 
-def runtime_root() -> Path:
-    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        return Path(sys._MEIPASS)
-    return REPO_ROOT
+def _candidate_config_roots() -> list[Path]:
+    roots: list[Path] = []
+    candidate_roots = [
+        RUNTIME_ROOT / "config",
+        REPO_ROOT / "config",
+        RUNTIME_ROOT / "outputs" / "work" / "keys",
+        REPO_ROOT / "outputs" / "work" / "keys",
+    ]
+    if getattr(sys, "frozen", False):
+        exe_path = Path(sys.executable).resolve()
+        candidate_roots.extend(
+            [
+                exe_path.parent.parent / "config",
+                exe_path.parent.parent.parent / "config",
+                exe_path.parent.parent / "outputs" / "work" / "keys",
+                exe_path.parent.parent.parent / "outputs" / "work" / "keys",
+            ]
+        )
+    for root in candidate_roots:
+        if root not in roots:
+            roots.append(root)
+    return roots
+
+
+def resolve_config_file(filename: str) -> Path:
+    for root in _candidate_config_roots():
+        candidate = root / filename
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    return _candidate_config_roots()[0] / filename
+
+
+GLADIA_KEYS_PATH = resolve_config_file("gladia_keys.txt")
+DEEPL_KEY_PATH = resolve_config_file("deepl_key.txt")
 
 
 def bundled_binary(name: str) -> Path | None:

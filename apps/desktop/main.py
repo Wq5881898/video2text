@@ -94,6 +94,38 @@ class DropListWidget(QListWidget):
             event.ignore()
 
 
+class DropFrame(QFrame):
+    files_dropped = pyqtSignal(list)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event) -> None:  # noqa: N802
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event) -> None:  # noqa: N802
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event) -> None:  # noqa: N802
+        paths: list[str] = []
+        for url in event.mimeData().urls():
+            local = url.toLocalFile()
+            if local:
+                paths.append(local)
+        if paths:
+            self.files_dropped.emit(paths)
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+
 class PipelineWorker(QObject):
     log_emitted = pyqtSignal(str)
     file_started = pyqtSignal(str)
@@ -258,9 +290,10 @@ class MainWindow(QMainWindow):
         subtitle.setStyleSheet("color: #555; font-size: 13px;")
         outer.addWidget(subtitle)
 
-        self.drop_frame = QFrame()
+        self.drop_frame = DropFrame()
         self.drop_frame.setObjectName("dropFrame")
         self.drop_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        self.drop_frame.files_dropped.connect(self.add_paths)
         self.drop_frame.setStyleSheet(
             "#dropFrame { border: 2px solid #5f7adb; border-radius: 14px; background: #f7f9ff; }"
         )
@@ -896,6 +929,7 @@ class MainWindow(QMainWindow):
         self.clear_action.setEnabled(not processing)
         self.remove_selected_button.setEnabled(not processing)
         self.select_failed_button.setEnabled(self._has_failed_items() and not processing)
+        self.drop_frame.setAcceptDrops(not processing)
         self.file_list.setDragEnabled(not processing)
         self.file_list.setAcceptDrops(not processing)
         self.file_list.setSelectionMode(
@@ -1144,12 +1178,12 @@ class MainWindow(QMainWindow):
                     errors.append("Video extraction requires ffmpeg/ffprobe. Install them or place them under D:\\program\\ffmpeg\\bin\\")
                 elif check.name == "gladia":
                     errors.append(
-                        f"Gladia key is missing. Set GLADIA_API_KEY or create {APP_RUNTIME_ROOT / 'config' / 'gladia_keys.txt'}."
+                        f"Gladia key is missing. Set GLADIA_API_KEY or create {check.detail.replace('Missing ', '')}."
                     )
                 elif check.name == "deepl":
                     errors.append(
                         "DeepL key is missing. "
-                        f"Set DEEPL_KEY or create {APP_RUNTIME_ROOT / 'config' / 'deepl_key.txt'}, or turn translation off."
+                        f"Set DEEPL_KEY or create {check.detail.replace('Missing ', '')}, or turn translation off."
                     )
                 else:
                     errors.append(f"{check.name}: {check.detail}")

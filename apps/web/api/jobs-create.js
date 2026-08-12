@@ -1,4 +1,4 @@
-const { waitUntil } = require("@vercel/functions");
+﻿const { waitUntil } = require("@vercel/functions");
 const {
   jobResultPath,
   jobStatusPath,
@@ -38,11 +38,23 @@ module.exports = async function handler(req, res) {
 
   try {
     const body = await readJsonBody(req);
+    console.log("[jobs-create] request received", {
+      hasSourceUrl: Boolean(body?.source_url),
+      fileName: body?.file_name,
+      outputFormat: body?.output_format,
+      translate: body?.translate,
+      mediaType: body?.media_type,
+    });
+
     const sourceUrl = String(body.source_url || "").trim();
     const fileName = String(body.file_name || "").trim();
-    const outputFormat = String(body.output_format || "txt").trim().toLowerCase();
+    const outputFormat = String(body.output_format || "txt")
+      .trim()
+      .toLowerCase();
     const translate = Boolean(body.translate);
-    const mediaType = String(body.media_type || "audio").trim().toLowerCase();
+    const mediaType = String(body.media_type || "audio")
+      .trim()
+      .toLowerCase();
 
     if (!sourceUrl) {
       res.status(400).json({ ok: false, error: "source_url is required" });
@@ -53,7 +65,9 @@ module.exports = async function handler(req, res) {
       return;
     }
     if (!["txt", "srt"].includes(outputFormat)) {
-      res.status(400).json({ ok: false, error: "output_format must be txt or srt" });
+      res
+        .status(400)
+        .json({ ok: false, error: "output_format must be txt or srt" });
       return;
     }
 
@@ -68,6 +82,8 @@ module.exports = async function handler(req, res) {
       created_at: new Date().toISOString(),
     };
 
+    console.log("[jobs-create] job accepted", { jobId, fileName, outputFormat, translate });
+
     await updateJobStatus(jobId, {
       status: "queued",
       stage: "queued",
@@ -76,44 +92,74 @@ module.exports = async function handler(req, res) {
       status_path: jobStatusPath(jobId),
     });
 
-    waitUntil((async () => {
-      try {
-        await updateJobStatus(jobId, { status: "processing", stage: "transcribing", request: job });
-        const result = await processJob(job);
-        await writeJson(jobResultPath(jobId), {
-          job_id: jobId,
-          completed_at: new Date().toISOString(),
-          ...result,
-        });
-        await updateJobStatus(jobId, {
-          status: "completed",
-          stage: "done",
-          request: job,
-          result: {
-            output_filename: result.output_filename,
-            segment_count: result.segment_count,
-            translated: result.translated,
-            media_type: result.media_type,
-          },
-        });
-      } catch (error) {
-        await updateJobStatus(jobId, {
-          status: "failed",
-          stage: "failed",
-          request: job,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    })());
+    waitUntil(
+      (async () => {
+        try {
+          await updateJobStatus(jobId, {
+            status: "processing",
+            stage: "preparing",
+            message: "Preparing job on the cloud runtime.",
+            request: job,
+          });
+          const result = await processJob(job, {
+            onStage: async (stage, message, extra = {}) => {
+              await updateJobStatus(jobId, {
+                status: "processing",
+                stage,
+                message,
+                request: job,
+                ...extra,
+              });
+            },
+          });
+          await writeJson(jobResultPath(jobId), {
+            job_id: jobId,
+            completed_at: new Date().toISOString(),
+            ...result,
+          });
+          await updateJobStatus(jobId, {
+            status: "completed",
+            stage: "done",
+            message: "Transcript is ready.",
+            request: job,
+            result: {
+              output_filename: result.output_filename,
+              segment_count: result.segment_count,
+              translated: result.translated,
+              media_type: result.media_type,
+            },
+          });
+          console.log("[jobs-create] job completed", { jobId, output: result.output_filename });
+        } catch (error) {
+          console.error("[jobs-create] background processing failed", {
+            jobId,
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+          });
+          await updateJobStatus(jobId, {
+            status: "failed",
+            stage: "failed",
+            message: "The job failed before a result was produced.",
+            request: job,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      })(),
+    );
 
     res.status(200).json({
       ok: true,
       status: "accepted",
       job_id: jobId,
+      job_url: `/jobs/${jobId}`,
       status_path: `/api/jobs-status?job_id=${jobId}`,
       result_path: `/api/jobs-result?job_id=${jobId}`,
     });
   } catch (error) {
+    console.error("[jobs-create] request failed", {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     res.status(400).json({
       ok: false,
       error: error instanceof Error ? error.message : String(error),

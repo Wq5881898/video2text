@@ -3,45 +3,29 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>video2text Web</title>
-    <script>
-      (() => {
-        const userAgent = navigator.userAgent;
-        const isAppleMobile =
-          /iPhone|iPad|iPod/i.test(userAgent) ||
-          (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-        const isSafari =
-          /Safari/i.test(userAgent) &&
-          !/CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo/i.test(userAgent);
-
-        if (isAppleMobile && isSafari) {
-          window.location.replace(`/mobile${window.location.search}${window.location.hash}`);
-        }
-      })();
-    </script>
+    <title>video2text Mobile Mode</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <main class="page">
       <section class="hero">
-        <p class="eyebrow">video2text web</p>
-        <h1>Media to transcript, web surface</h1>
+        <p class="eyebrow">video2text mobile</p>
+        <h1>Safari-friendly upload mode</h1>
         <p class="lede">
-          This web app is the cloud-facing companion to the desktop product. It
-          can now submit media directly to the cloud runtime for transcript
-          generation, optional Chinese translation, and txt or srt output.
+          This mode creates a persistent job URL after upload. You can refresh
+          the page or come back later without losing the task.
         </p>
       </section>
 
       <section class="panel">
-        <form id="transcribe-form" class="form">
+        <form id="mobile-form" class="form">
           <div class="entry-grid">
             <section id="upload-card" class="entry-card is-active">
               <div class="entry-head">
                 <h3>Upload a local file</h3>
                 <p>
-                  Best when the media is on your computer. Large files upload to
-                  cloud storage first.
+                  Recommended for Safari and mobile browsers. The file uploads
+                  first, then the job runs in the background.
                 </p>
               </div>
               <label id="upload-field" class="dropzone">
@@ -65,7 +49,8 @@
               <div class="entry-head">
                 <h3>Process from a URL</h3>
                 <p>
-                  Best when the media already has a direct downloadable link.
+                  If you already have a direct file URL, create a background job
+                  from it.
                 </p>
               </div>
               <label id="url-field">
@@ -100,50 +85,27 @@
           </div>
 
           <div class="submit-row">
-            <button type="submit">Start Transcription</button>
-            <p class="submit-note">Single file in, single result out.</p>
-          </div>
-          <div class="alt-mode">
-            <a class="alt-mode-link" href="/mobile"
-              >Open Safari / Mobile mode</a
-            >
-            <p class="alt-mode-note">
-              Use this if your browser does not reliably stay connected during
-              long processing.
+            <button type="submit">Create Background Job</button>
+            <p class="submit-note">
+              You will receive a persistent job URL after submission.
             </p>
           </div>
         </form>
 
         <div id="result-panel" class="result-panel" hidden>
           <div id="result-summary" class="result-summary"></div>
-          <div id="result-actions" class="result-actions" hidden>
-            <button id="download-result" type="button">Download Result</button>
-          </div>
-          <div id="result-preview" class="result-preview" hidden>
-            <h3>Preview</h3>
-            <pre id="result-preview-text">No preview yet.</pre>
-          </div>
           <details class="tech-log">
             <summary>Technical Log</summary>
             <pre id="transcribe-output">No request submitted yet.</pre>
           </details>
         </div>
-      </section>
 
-      <details class="panel panel-compact diagnostics">
-        <summary class="diagnostics-summary">
-          <span>
-            <strong>Runtime Status</strong>
-            <small>For debugging and environment checks</small>
-          </span>
-        </summary>
-        <div class="diagnostics-actions">
-          <button id="refresh-status" type="button">Refresh</button>
+        <div class="alt-mode">
+          <a class="alt-mode-link" href="/">Return to sync desktop mode</a>
         </div>
-        <pre id="status-output">Loading...</pre>
-      </details>
+      </section>
     </main>
 
-    <script type="module" src="./web.js"></script>
+    <script type="module" src="./mobile.bundle.js"></script>
   </body>
 </html>
