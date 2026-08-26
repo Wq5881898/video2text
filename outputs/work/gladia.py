@@ -335,18 +335,23 @@ def upload(rotator, src=None):
     return data["audio_url"]
 
 
-def transcribe_with_audio_url(rotator, audio_url):
+def transcribe_with_audio_url(rotator, audio_url, languages=None, code_switching=False):
     """POST /v2/pre-recorded 提交 audio_url. 返回 (status, data), 不内部 rotate.
 
-    2026-07-05 改: 纯 en transcription 调用, 关闭所有消耗额外 quota 的开关:
-    - 不传 translation_config: translation 池单独计费, en-only 流水线不需要
+    提交纯语音转写任务，语言由调用方指定或自动检测，并关闭额外 quota 功能:
+    - 不传 translation_config: translation 池单独计费, 翻译由后续流程处理
     - summarization=False, chapterization=False: 这俩也是 transcription 池消耗
-    - 只保留 en stt + diarization + sentences + subtitles
+    - 只保留 STT + diarization + sentences + subtitles
     """
-    print("[2/3] transcribing (en-only)...", flush=True)
+    selected_languages = LANGUAGES if languages is None else languages
+    language_label = ",".join(selected_languages) if selected_languages else "auto"
+    print(f"[2/3] transcribing (languages={language_label}, code_switching={code_switching})...", flush=True)
     config = {
         "audio_url": audio_url,
-        "language_config": {"languages": LANGUAGES, "code_switching": False},
+        "language_config": {
+            "languages": selected_languages,
+            "code_switching": code_switching,
+        },
         "diarization": True,
         "diarization_config": {"min_speakers": SPEAKERS_MIN, "max_speakers": SPEAKERS_MAX},
         "sentences": SENTENCES,
@@ -366,14 +371,19 @@ def transcribe_with_audio_url(rotator, audio_url):
     return http_post_json(rotator, EP_INIT, config, timeout=60)
 
 
-def transcribe(rotator, audio_url):
+def transcribe(rotator, audio_url, languages=None, code_switching=False):
     """submit audio_url + 配对处理.
 
     规则 (坑 AL 2026-07-05): Gladia audio_url 跟 uploader key 绑定.
     - 401/403: 当前 key 没权 fetch 那个 audio_url, audio_url 废了, raise AudioUrlKeyMismatch.
     - 402/429: quota/rate, 让 caller 整个重来.
     """
-    status, data = transcribe_with_audio_url(rotator, audio_url)
+    status, data = transcribe_with_audio_url(
+        rotator,
+        audio_url,
+        languages=languages,
+        code_switching=code_switching,
+    )
     print("submit status:", status, flush=True)
     if status == 401 or status == 403:
         raise AudioUrlKeyMismatch(f"submit auth FAIL (audio_url 跟 key 不匹配): {status} {data}")

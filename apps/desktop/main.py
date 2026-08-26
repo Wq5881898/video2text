@@ -37,7 +37,7 @@ from PyQt6.QtWidgets import (
 )
 
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -134,11 +134,19 @@ class PipelineWorker(QObject):
     results_ready = pyqtSignal(list)
     all_finished = pyqtSignal(int, str)
 
-    def __init__(self, paths: list[str], output_format: str, translate: bool, output_dir: str) -> None:
+    def __init__(
+        self,
+        paths: list[str],
+        output_format: str,
+        translate: bool,
+        source_language: str,
+        output_dir: str,
+    ) -> None:
         super().__init__()
         self.paths = paths
         self.output_format = output_format
         self.translate = translate
+        self.source_language = source_language
         self.output_dir = output_dir
 
     @pyqtSlot()
@@ -171,6 +179,7 @@ class PipelineWorker(QObject):
             config = PipelineConfig(
                 output_format=self.output_format,
                 translate=self.translate,
+                source_language=self.source_language,
                 output_dir=Path(self.output_dir) if self.output_dir else None,
             )
             results, failures = process_many(resolved_paths, config, log=log, stage_callback=stage_callback)
@@ -349,13 +358,27 @@ class MainWindow(QMainWindow):
         controls_layout.setContentsMargins(16, 16, 16, 16)
         controls_layout.setSpacing(12)
 
+        language_row = QHBoxLayout()
+        language_label = QLabel("Source Language")
+        language_label.setFixedWidth(110)
+        self.source_language_combo = QComboBox()
+        self.source_language_combo.addItem("Auto Detect", "auto")
+        self.source_language_combo.addItem("English", "en")
+        self.source_language_combo.addItem("Chinese", "zh")
+        self.source_language_combo.addItem("English + Chinese", "en_zh")
+        self.source_language_combo.currentIndexChanged.connect(self._source_language_changed)
+        language_row.addWidget(language_label)
+        language_row.addWidget(self.source_language_combo)
+        language_row.addStretch(1)
+        controls_layout.addLayout(language_row)
+
         mode_row = QHBoxLayout()
         mode_label = QLabel("Output")
         mode_label.setFixedWidth(110)
         self.format_combo = QComboBox()
         self.format_combo.addItems(["txt", "srt"])
         self.format_combo.currentTextChanged.connect(self._persist_current_state)
-        self.translate_checkbox = QCheckBox("Translate to Chinese")
+        self.translate_checkbox = QCheckBox("Translate English to Chinese")
         self.translate_checkbox.setChecked(True)
         self.translate_checkbox.toggled.connect(self._persist_current_state)
         mode_row.addWidget(mode_label)
@@ -585,6 +608,7 @@ class MainWindow(QMainWindow):
         outer.addWidget(self.log_view, 1)
         self.refresh_jobs_list()
         self.load_last_state()
+        self._source_language_changed()
         self.restore_queue(show_message=False)
         self.refresh_recent_outputs()
         self.refresh_task_details()
@@ -760,6 +784,7 @@ class MainWindow(QMainWindow):
             paths=paths,
             output_format=self.format_combo.currentText(),
             translate=self.translate_checkbox.isChecked(),
+            source_language=str(self.source_language_combo.currentData()),
             output_dir=output_dir,
         )
         self.worker.moveToThread(self.worker_thread)
@@ -904,6 +929,7 @@ class MainWindow(QMainWindow):
             f"Source: {source_path}",
             f"Status: {status}",
             f"Output Format: {self.format_combo.currentText()}",
+            f"Source Language: {self.source_language_combo.currentText()}",
             f"Translate: {'Yes' if self.translate_checkbox.isChecked() else 'No'}",
             f"Output Folder: {self.output_edit.text().strip() or DEFAULT_OUTPUT_DIR}",
             f"Result File: {result_path or 'Not available yet'}",
@@ -1026,8 +1052,20 @@ class MainWindow(QMainWindow):
         return {
             "output_format": self.format_combo.currentText(),
             "translate": self.translate_checkbox.isChecked(),
+            "source_language": str(self.source_language_combo.currentData()),
             "output_dir": self.output_edit.text().strip() or str(DEFAULT_OUTPUT_DIR),
         }
+
+    def _source_language_changed(self, *_args) -> None:
+        source_language = str(self.source_language_combo.currentData())
+        translation_supported = source_language in {"auto", "en"}
+        self.translate_checkbox.setEnabled(translation_supported)
+        if not translation_supported:
+            self.translate_checkbox.setChecked(False)
+            self.translate_checkbox.setToolTip("Chinese and mixed-language modes preserve the source transcript.")
+        else:
+            self.translate_checkbox.setToolTip("Add a Chinese translation when the detected source is English.")
+        self._persist_current_state()
 
     def _write_settings_file(self, target: Path) -> None:
         if not self.preset_autosave_enabled:
@@ -1111,12 +1149,17 @@ class MainWindow(QMainWindow):
         data = json.loads(source.read_text(encoding="utf-8"))
         output_format = str(data.get("output_format", "txt"))
         translate = bool(data.get("translate", True))
+        source_language = str(data.get("source_language", "auto"))
         output_dir = str(data.get("output_dir", DEFAULT_OUTPUT_DIR))
         self.preset_autosave_enabled = False
         try:
             if output_format in {"txt", "srt"}:
                 self.format_combo.setCurrentText(output_format)
+            source_index = self.source_language_combo.findData(source_language)
+            if source_index >= 0:
+                self.source_language_combo.setCurrentIndex(source_index)
             self.translate_checkbox.setChecked(translate)
+            self._source_language_changed()
             self.output_edit.setText(output_dir)
             self.last_auto_output_dir = output_dir
             self.output_dir_manually_set = output_dir != str(DEFAULT_OUTPUT_DIR)
@@ -1147,7 +1190,10 @@ class MainWindow(QMainWindow):
     def _compute_environment_checks(self, paths: list[Path] | None = None):
         queue_paths = paths if paths is not None else self._queued_paths()
         needs_video_tools = any(path.suffix.lower() in VIDEO_EXTS for path in queue_paths)
-        needs_translation = self.translate_checkbox.isChecked()
+        needs_translation = (
+            self.translate_checkbox.isChecked()
+            and str(self.source_language_combo.currentData()) in {"auto", "en"}
+        )
         return collect_environment_checks(
             needs_translation=needs_translation,
             needs_video_tools=needs_video_tools,

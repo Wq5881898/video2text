@@ -1,8 +1,8 @@
 # video2text
 
-`video2text` 是一个本地优先的音视频转文字工具。它支持音频和视频输入，视频会先提取音频，再进行英文转写，可选翻译成中文，最后导出 `txt` 或 `srt`。
+`video2text` 是一个本地优先的音视频转文字工具。它支持音频和视频输入，视频会先提取音频，再按自动、英文、中文或中英混合模式转写；英文可选翻译成中文，最后导出 `txt` 或 `srt`。
 
-`video2text` is a local-first media-to-transcript tool for Windows. It accepts audio or video input, extracts audio from video, runs English speech-to-text, optionally translates to Chinese, and exports either `txt` or `srt`.
+`video2text` is a local-first media-to-transcript tool for Windows. It accepts audio or video input, supports automatic, English, Chinese, and mixed English/Chinese transcription, optionally translates English to Chinese, and exports either `txt` or `srt`.
 
 ## 当前状态 | Current Status
 
@@ -73,6 +73,9 @@ D:\projectQ\.venv\Scripts\python.exe apps\desktop\main.py
 
 - 翻译开关
 - translation toggle
+
+- 源语言选项：自动检测、英文、中文、中英混合
+- source-language modes: auto-detect, English, Chinese, and mixed English/Chinese
 
 - 输出目录自动跟随输入目录，支持手动修改
 - output folder auto-follows the input folder, with manual override
@@ -162,14 +165,14 @@ D:\projectQ\.venv\Scripts\python.exe apps\desktop\main.py
 输出规则：
 
 - `txt`
-  - 不翻译时输出英文文本
-  -  English transcript when translation is off
+  - 不翻译时保留识别到的源语言文本
+  - preserves the detected source-language transcript when translation is off
   - 翻译开启时输出中英双语文本，中文在前，英文在后
   - bilingual text when translation is on, Chinese first and English second
 
 - `srt`
-  - 不翻译时输出英文字幕
-  - English subtitle when translation is off
+  - 不翻译时保留识别到的源语言字幕
+  - preserves the detected source-language subtitles when translation is off
   - 翻译开启时输出中英双语字幕，中文在前，英文在后
   - bilingual subtitle when translation is on, Chinese first and English second
 

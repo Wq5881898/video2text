@@ -92,6 +92,7 @@ def bundled_binary(name: str) -> Path | None:
 class PipelineConfig:
     output_format: str
     translate: bool
+    source_language: str = "auto"
     output_dir: Path | None = None
     jobs_root: Path = DEFAULT_JOBS_ROOT
     poll_interval: int = 8
@@ -285,36 +286,61 @@ def wait_for_gladia_result(
     raise TimeoutError(f"Gladia polling timeout for job {job_id}")
 
 
-def write_raw_result(result: dict, job_id: str, raw_path: Path, zh_path: Path) -> list[dict]:
-    en_segments = [
+def language_config_for_mode(source_language: str) -> tuple[list[str], bool]:
+    modes = {
+        "auto": ([], False),
+        "en": (["en"], False),
+        "zh": (["zh"], False),
+        "en_zh": (["en", "zh"], True),
+    }
+    if source_language not in modes:
+        raise ValueError(f"unsupported source language mode: {source_language}")
+    return modes[source_language]
+
+
+def write_raw_result(result: dict, job_id: str, raw_path: Path, zh_path: Path) -> tuple[list[dict], list[str]]:
+    transcription = result.get("transcription", {})
+    segments = [
         {
             "start": round(u["start"], 2),
             "end": round(u["end"], 2),
             "speaker": u.get("speaker"),
             "text": u["text"].strip(),
             "confidence": u.get("confidence"),
+            "language": u.get("language"),
         }
-        for u in result.get("transcription", {}).get("utterances", [])
+        for u in transcription.get("utterances", [])
     ]
+    detected_languages = list(dict.fromkeys(
+        language
+        for language in (
+            list(transcription.get("languages") or [])
+            + [segment.get("language") for segment in segments]
+        )
+        if language
+    ))
+    primary_language = detected_languages[0] if detected_languages else "unknown"
     raw_data = {
         "duration": result.get("metadata", {}).get("audio_duration"),
-        "language": "en",
-        "segments": en_segments,
+        "language": primary_language,
+        "languages": detected_languages,
+        "segments": segments,
         "job_id": job_id,
         "_fetch_ts": time.time(),
     }
     raw_path.write_text(json.dumps(raw_data, ensure_ascii=False, indent=2), encoding="utf-8")
     zh_data = {
         "duration": result.get("metadata", {}).get("audio_duration"),
-        "language": "en",
-        "segments_en": en_segments,
+        "language": primary_language,
+        "languages": detected_languages,
+        "segments_en": segments,
         "segments_zh": [],
         "job_id": job_id,
         "_fetch_ts": time.time(),
-        "_fetch_stage": "en-only",
+        "_fetch_stage": "source-transcript",
     }
     zh_path.write_text(json.dumps(zh_data, ensure_ascii=False, indent=2), encoding="utf-8")
-    return en_segments
+    return segments, detected_languages
 
 
 def run_dedup(raw_path: Path, out_path: Path) -> list[dict]:
@@ -403,7 +429,7 @@ def ensure_transcript_artifacts(
     config: PipelineConfig,
     log: LogFn = default_log,
     stage_callback: StageFn = default_stage_callback,
-) -> tuple[list[dict], Path, Path]:
+) -> tuple[list[dict], Path, Path, list[str], bool]:
     keys = g.load_keys()
     rotator = g.KeyRotator(keys)
     idx = g.find_working_key(rotator, force=True)
@@ -425,7 +451,13 @@ def ensure_transcript_artifacts(
         stage_callback(media_path, "stt", "Uploading audio")
         audio_url = g.upload(rotator, src=media_path)
         stage_callback(media_path, "stt", "Submitting transcription")
-        job_id = g.transcribe(rotator, audio_url)
+        languages, code_switching = language_config_for_mode(config.source_language)
+        job_id = g.transcribe(
+            rotator,
+            audio_url,
+            languages=languages,
+            code_switching=code_switching,
+        )
         job_id_path.write_text(job_id, encoding="utf-8")
         stage_callback(media_path, "stt", "Waiting for transcription result")
         result = wait_for_gladia_result(
@@ -447,10 +479,29 @@ def ensure_transcript_artifacts(
         )
         write_raw_result(result, job_id, raw_path, zh_path)
 
-    log("[dedup] running dedup.py")
-    stage_callback(media_path, "dedup", "Cleaning transcript segments")
-    en_clean = run_dedup(raw_path, clean_path)
-    return en_clean, clean_path, zh_path
+    raw_data = json.loads(raw_path.read_text(encoding="utf-8"))
+    detected_languages = raw_data.get("languages", [])
+    if not detected_languages and raw_data.get("language") not in {None, "unknown"}:
+        detected_languages = [raw_data["language"]]
+    english_only = config.source_language == "en" or (
+        config.source_language == "auto"
+        and bool(detected_languages)
+        and all(str(language).lower().startswith("en") for language in detected_languages)
+    )
+
+    if english_only:
+        log("[dedup] running English transcript cleanup")
+        stage_callback(media_path, "dedup", "Cleaning English transcript segments")
+        clean_segments = run_dedup(raw_path, clean_path)
+    else:
+        log("[dedup] preserving source-language transcript")
+        stage_callback(media_path, "dedup", "Preserving source-language segments")
+        clean_segments = raw_data.get("segments", [])
+        clean_path.write_text(
+            json.dumps(clean_segments, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    return clean_segments, clean_path, zh_path, detected_languages, english_only
 
 
 def render_output(
@@ -458,11 +509,13 @@ def render_output(
     en_segments: list[dict],
     zh_path: Path,
     config: PipelineConfig,
+    can_translate_to_chinese: bool,
     log: LogFn = default_log,
     stage_callback: StageFn = default_stage_callback,
-) -> Path:
+) -> tuple[Path, bool]:
     out_path = choose_output_path(source_path, config.output_dir, config.output_format)
-    if config.translate:
+    translated = config.translate and can_translate_to_chinese
+    if translated:
         log("[translate] running DeepL translation")
         stage_callback(source_path, "translate", "Translating to Chinese")
         deepl_translate.main([str(zh_path.parent / "utt_clean.json"), str(zh_path)])
@@ -474,13 +527,15 @@ def render_output(
         else:
             render_srt_bilingual(en_segments, zh_segments, out_path)
     else:
+        if config.translate and not can_translate_to_chinese:
+            log("[translate] skipped: source is Chinese, mixed-language, or was not detected as English")
         log(f"[render] writing {config.output_format} without translation")
         stage_callback(source_path, "render", f"Writing {config.output_format} output")
         if config.output_format == "txt":
             render_txt_en(en_segments, out_path)
         else:
             render_srt_en(en_segments, out_path)
-    return out_path
+    return out_path, translated
 
 
 def process_one(
@@ -489,24 +544,27 @@ def process_one(
     log: LogFn = default_log,
     stage_callback: StageFn = default_stage_callback,
 ) -> PipelineResult:
-    job_tag = stable_job_tag(source_path)
+    job_tag = f"{stable_job_tag(source_path)}__{config.source_language}"
     job_dir = config.jobs_root / job_tag
     job_dir.mkdir(parents=True, exist_ok=True)
 
     stage_callback(source_path, "prepare", "Preparing input media")
     media_type, media_path = prepare_input_media(source_path, job_dir, log=log)
-    en_clean, _clean_path, zh_path = ensure_transcript_artifacts(
+    clean_segments, _clean_path, zh_path, detected_languages, english_only = ensure_transcript_artifacts(
         media_path,
         job_dir,
         config,
         log=log,
         stage_callback=stage_callback,
     )
-    output_path = render_output(
+    if detected_languages:
+        log(f"[stt] detected language(s): {', '.join(detected_languages)}")
+    output_path, translated = render_output(
         source_path,
-        en_clean,
+        clean_segments,
         zh_path,
         config,
+        can_translate_to_chinese=english_only,
         log=log,
         stage_callback=stage_callback,
     )
@@ -517,7 +575,7 @@ def process_one(
         prepared_audio_path=media_path,
         output_path=output_path,
         job_dir=job_dir,
-        translated=config.translate,
+        translated=translated,
         output_format=config.output_format,
     )
 
