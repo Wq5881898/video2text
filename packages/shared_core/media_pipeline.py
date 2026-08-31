@@ -13,11 +13,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from .key_management import CONFIG_ROOT, DEEPL_KEY_PATH, GLADIA_KEYS_PATH, application_root
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-APP_ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else REPO_ROOT
-
-
 def runtime_root() -> Path:
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         return Path(sys._MEIPASS)
@@ -25,10 +24,9 @@ def runtime_root() -> Path:
 
 
 RUNTIME_ROOT = runtime_root()
-WORK_ROOT = RUNTIME_ROOT / "outputs" / "work"
-CONFIG_ROOT = APP_ROOT / "config"
-if str(WORK_ROOT) not in sys.path:
-    sys.path.insert(0, str(WORK_ROOT))
+RESOURCE_WORK_ROOT = RUNTIME_ROOT / "outputs" / "work"
+if str(RESOURCE_WORK_ROOT) not in sys.path:
+    sys.path.insert(0, str(RESOURCE_WORK_ROOT))
 
 import deepl_translate
 import gladia as g
@@ -42,47 +40,7 @@ VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".wmv", ".flv", ".webm", ".m4v"}
 SUPPORTED_EXTS = AUDIO_EXTS | VIDEO_EXTS
 FFMPEG_FALLBACK = Path(r"D:\program\ffmpeg\bin\ffmpeg.exe")
 FFPROBE_FALLBACK = Path(r"D:\program\ffmpeg\bin\ffprobe.exe")
-DEFAULT_JOBS_ROOT = WORK_ROOT / "jobs"
-GLADIA_KEYS_PATH = CONFIG_ROOT / "gladia_keys.txt"
-DEEPL_KEY_PATH = CONFIG_ROOT / "deepl_key.txt"
-
-
-def _candidate_config_roots() -> list[Path]:
-    roots: list[Path] = []
-    candidate_roots = [
-        RUNTIME_ROOT / "config",
-        REPO_ROOT / "config",
-        RUNTIME_ROOT / "outputs" / "work" / "keys",
-        REPO_ROOT / "outputs" / "work" / "keys",
-    ]
-    if getattr(sys, "frozen", False):
-        exe_path = Path(sys.executable).resolve()
-        candidate_roots.extend(
-            [
-                exe_path.parent.parent / "config",
-                exe_path.parent.parent.parent / "config",
-                exe_path.parent.parent / "outputs" / "work" / "keys",
-                exe_path.parent.parent.parent / "outputs" / "work" / "keys",
-            ]
-        )
-    for root in candidate_roots:
-        if root not in roots:
-            roots.append(root)
-    return roots
-
-
-def resolve_config_file(filename: str) -> Path:
-    for root in _candidate_config_roots():
-        candidate = root / filename
-        if candidate.exists() and candidate.is_file():
-            return candidate
-    return _candidate_config_roots()[0] / filename
-
-
-GLADIA_KEYS_PATH = resolve_config_file("gladia_keys.txt")
-DEEPL_KEY_PATH = resolve_config_file("deepl_key.txt")
-
-
+DEFAULT_JOBS_ROOT = application_root() / "outputs" / "work" / "jobs"
 def bundled_binary(name: str) -> Path | None:
     candidate = runtime_root() / "bin" / f"{name}.exe"
     return candidate if candidate.exists() else None
@@ -228,6 +186,8 @@ def extract_audio_for_video(src: Path, out_audio: Path, log: LogFn = default_log
     ffprobe_exe = find_binary("ffprobe", FFPROBE_FALLBACK)
     channels = probe_channels(ffprobe_exe, src)
     log(f"[extract] {src.name}: channels={channels}")
+    temp_audio = out_audio.with_name(f".{out_audio.stem}.extracting{out_audio.suffix}")
+    temp_audio.unlink(missing_ok=True)
     if channels == 1:
         cmd = [
             ffmpeg_exe,
@@ -240,7 +200,7 @@ def extract_audio_for_video(src: Path, out_audio: Path, log: LogFn = default_log
             "0:a:0",
             "-c:a",
             "copy",
-            str(out_audio),
+            str(temp_audio),
         ]
         log("[extract] mode=copy mono audio stream")
     else:
@@ -259,10 +219,14 @@ def extract_audio_for_video(src: Path, out_audio: Path, log: LogFn = default_log
             "aac",
             "-b:a",
             "192k",
-            str(out_audio),
+            str(temp_audio),
         ]
         log("[extract] mode=left-channel to mono AAC")
-    subprocess.run(cmd, check=True)
+    try:
+        subprocess.run(cmd, check=True)
+        temp_audio.replace(out_audio)
+    finally:
+        temp_audio.unlink(missing_ok=True)
 
 
 def wait_for_gladia_result(
@@ -344,7 +308,7 @@ def write_raw_result(result: dict, job_id: str, raw_path: Path, zh_path: Path) -
 
 
 def run_dedup(raw_path: Path, out_path: Path) -> list[dict]:
-    dedup_script = WORK_ROOT / "dedup.py"
+    dedup_script = RESOURCE_WORK_ROOT / "dedup.py"
     old_argv = sys.argv[:]
     try:
         sys.argv = [str(dedup_script), str(raw_path), str(out_path)]
@@ -410,7 +374,8 @@ def prepare_input_media(src: Path, job_dir: Path, log: LogFn = default_log) -> t
     if media_type == "audio":
         return media_type, src
     out_audio = job_dir / f"{src.stem}.m4a"
-    if not out_audio.exists():
+    has_submitted_job = (job_dir / "gladia_raw.job_id").exists()
+    if not out_audio.exists() or not has_submitted_job:
         extract_audio_for_video(src, out_audio, log=log)
     else:
         log(f"[extract] reuse existing audio: {out_audio}")
@@ -448,16 +413,27 @@ def ensure_transcript_artifacts(
         stage_callback(media_path, "stt", "Reusing transcript job")
     else:
         log(f"[stt] upload/transcribe: {media_path.name}")
-        stage_callback(media_path, "stt", "Uploading audio")
-        audio_url = g.upload(rotator, src=media_path)
-        stage_callback(media_path, "stt", "Submitting transcription")
         languages, code_switching = language_config_for_mode(config.source_language)
-        job_id = g.transcribe(
-            rotator,
-            audio_url,
-            languages=languages,
-            code_switching=code_switching,
-        )
+        while True:
+            try:
+                stage_callback(media_path, "stt", "Uploading audio")
+                audio_url = g.upload(rotator, src=media_path)
+                stage_callback(media_path, "stt", "Submitting transcription")
+                job_id = g.transcribe(
+                    rotator,
+                    audio_url,
+                    languages=languages,
+                    code_switching=code_switching,
+                )
+                break
+            except g.AudioUrlKeyMismatch as exc:
+                failed_index = rotator.idx
+                rotator.mark_bad(failed_index, reason=str(exc))
+                next_index = g.find_working_key(rotator, force=True)
+                if next_index is None:
+                    raise RuntimeError("all Gladia keys were rejected by the remote API") from exc
+                rotator.use(next_index)
+                log(f"[stt] remote rejected key#{failed_index + 1}; retrying with key#{next_index + 1}")
         job_id_path.write_text(job_id, encoding="utf-8")
         stage_callback(media_path, "stt", "Waiting for transcription result")
         result = wait_for_gladia_result(

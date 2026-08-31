@@ -20,7 +20,12 @@ from pathlib import Path
 
 RUNTIME_ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 SCRIPT_DIR = RUNTIME_ROOT / "outputs" / "work" if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
-CONFIG_DIR = RUNTIME_ROOT / "config" if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent.parent / "config"
+CONFIG_DIR = Path(
+    os.environ.get(
+        "VIDEO2TEXT_CONFIG_DIR",
+        RUNTIME_ROOT / "config" if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent.parent / "config",
+    )
+).resolve()
 
 # 翻译端点 (免费层用 api-free.deepl.com, 不是 api.deepl.com)
 DEEPL_URL = "https://api-free.deepl.com/v2/translate"

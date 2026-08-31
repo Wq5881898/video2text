@@ -11,6 +11,19 @@ from .media_pipeline import (
     process_many,
     process_one,
 )
+from .key_management import (
+    CONFIG_ROOT,
+    DEEPL_KEY_PATH,
+    GLADIA_KEYS_PATH,
+    KeyCheckResult,
+    check_deepl_key,
+    check_gladia_key,
+    mask_key,
+    read_deepl_key,
+    read_gladia_keys,
+    write_deepl_key,
+    write_gladia_keys,
+)
 
 __all__ = [
     "AUDIO_EXTS",
@@ -24,4 +37,15 @@ __all__ = [
     "expand_inputs",
     "process_many",
     "process_one",
+    "KeyCheckResult",
+    "CONFIG_ROOT",
+    "DEEPL_KEY_PATH",
+    "GLADIA_KEYS_PATH",
+    "check_deepl_key",
+    "check_gladia_key",
+    "mask_key",
+    "read_deepl_key",
+    "read_gladia_keys",
+    "write_deepl_key",
+    "write_gladia_keys",
 ]

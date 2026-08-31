@@ -13,9 +13,13 @@ from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,
+    QDialog,
     QFileDialog,
     QFrame,
+    QGroupBox,
+    QHeaderView,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -29,6 +33,8 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QTabWidget,
+    QTableWidget,
+    QTableWidgetItem,
     QTextEdit,
     QToolBar,
     QToolButton,
@@ -43,17 +49,27 @@ if str(REPO_ROOT) not in sys.path:
 
 from packages.shared_core import (
     PipelineConfig,
+    DEEPL_KEY_PATH,
+    DEFAULT_JOBS_ROOT,
+    GLADIA_KEYS_PATH,
     SUPPORTED_EXTS,
     VIDEO_EXTS,
     collect_environment_checks,
     expand_inputs,
     process_many,
+    check_deepl_key,
+    check_gladia_key,
+    mask_key,
+    read_deepl_key,
+    read_gladia_keys,
+    write_deepl_key,
+    write_gladia_keys,
 )
 from apps.desktop.meta import APP_DESCRIPTION, APP_NAME, APP_VERSION
 
 APP_RUNTIME_ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else REPO_ROOT
 DEFAULT_OUTPUT_DIR = APP_RUNTIME_ROOT / "sandbox" / "gui-output"
-JOBS_ROOT = APP_RUNTIME_ROOT / "outputs" / "work" / "jobs"
+JOBS_ROOT = DEFAULT_JOBS_ROOT
 GUI_PRESET_PATH = APP_RUNTIME_ROOT / "sandbox" / "gui-preset.json"
 GUI_STATE_PATH = APP_RUNTIME_ROOT / "sandbox" / "gui-state.json"
 QUEUE_STATE_PATH = APP_RUNTIME_ROOT / "sandbox" / "gui-queue.json"
@@ -202,6 +218,187 @@ class PipelineWorker(QObject):
             self.all_finished.emit(1, str(exc))
 
 
+class KeyCheckWorker(QObject):
+    result_ready = pyqtSignal(str, int, object)
+    finished = pyqtSignal()
+
+    def __init__(self, gladia_keys: list[str], deepl_key: str) -> None:
+        super().__init__()
+        self.gladia_keys = gladia_keys
+        self.deepl_key = deepl_key
+
+    @pyqtSlot()
+    def run(self) -> None:
+        for index, key in enumerate(self.gladia_keys):
+            self.result_ready.emit("gladia", index, check_gladia_key(key))
+        if self.deepl_key:
+            self.result_ready.emit("deepl", 0, check_deepl_key(self.deepl_key))
+        self.finished.emit()
+
+
+class KeyManagementDialog(QDialog):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("API Key Management")
+        self.resize(720, 520)
+        self.check_thread: QThread | None = None
+        self.check_worker: KeyCheckWorker | None = None
+
+        root = QVBoxLayout(self)
+        intro = QLabel("Keys are stored locally in the config folder. Full keys are never shown in status or logs.")
+        intro.setWordWrap(True)
+        root.addWidget(intro)
+
+        gladia_group = QGroupBox("Audio transcription keys (Gladia)")
+        gladia_layout = QVBoxLayout(gladia_group)
+        self.gladia_table = QTableWidget(0, 3)
+        self.gladia_table.setHorizontalHeaderLabels(["Key", "Status", "Usage"])
+        self.gladia_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.gladia_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.gladia_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.gladia_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.gladia_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        gladia_layout.addWidget(self.gladia_table)
+        gladia_buttons = QHBoxLayout()
+        add_button = QPushButton("Add Key")
+        add_button.clicked.connect(self.add_gladia_key)
+        remove_button = QPushButton("Remove Selected")
+        remove_button.clicked.connect(self.remove_gladia_key)
+        gladia_buttons.addWidget(add_button)
+        gladia_buttons.addWidget(remove_button)
+        gladia_buttons.addStretch()
+        gladia_layout.addLayout(gladia_buttons)
+        root.addWidget(gladia_group)
+
+        deepl_group = QGroupBox("Translation key (DeepL)")
+        deepl_layout = QVBoxLayout(deepl_group)
+        deepl_row = QHBoxLayout()
+        self.deepl_edit = QLineEdit()
+        self.deepl_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.deepl_edit.setPlaceholderText("DeepL API key")
+        show_key = QCheckBox("Show")
+        show_key.toggled.connect(
+            lambda checked: self.deepl_edit.setEchoMode(
+                QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
+            )
+        )
+        deepl_row.addWidget(self.deepl_edit)
+        deepl_row.addWidget(show_key)
+        deepl_layout.addLayout(deepl_row)
+        self.deepl_status = QLabel("Not tested")
+        deepl_layout.addWidget(self.deepl_status)
+        root.addWidget(deepl_group)
+
+        actions = QHBoxLayout()
+        self.test_button = QPushButton("Test All Keys")
+        self.test_button.clicked.connect(self.test_keys)
+        save_button = QPushButton("Save")
+        save_button.clicked.connect(self.save_keys)
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(self.reject)
+        actions.addWidget(self.test_button)
+        actions.addStretch()
+        actions.addWidget(save_button)
+        actions.addWidget(close_button)
+        root.addLayout(actions)
+        self.load_keys()
+
+    def load_keys(self) -> None:
+        for key in read_gladia_keys(GLADIA_KEYS_PATH):
+            self._append_gladia_key(key)
+        self.deepl_edit.setText(read_deepl_key(DEEPL_KEY_PATH))
+
+    def _append_gladia_key(self, key: str) -> None:
+        row = self.gladia_table.rowCount()
+        self.gladia_table.insertRow(row)
+        key_item = QTableWidgetItem(mask_key(key))
+        key_item.setData(Qt.ItemDataRole.UserRole, key)
+        self.gladia_table.setItem(row, 0, key_item)
+        self.gladia_table.setItem(row, 1, QTableWidgetItem("Not tested"))
+        self.gladia_table.setItem(row, 2, QTableWidgetItem("Not exposed by Gladia API"))
+
+    def add_gladia_key(self) -> None:
+        key, accepted = QInputDialog.getText(
+            self, "Add Gladia Key", "API key:", QLineEdit.EchoMode.Password
+        )
+        clean = key.strip()
+        if accepted and clean:
+            existing = self._gladia_keys()
+            if clean in existing:
+                QMessageBox.information(self, "Duplicate Key", "This key is already in the list.")
+                return
+            self._append_gladia_key(clean)
+
+    def remove_gladia_key(self) -> None:
+        rows = sorted({index.row() for index in self.gladia_table.selectedIndexes()}, reverse=True)
+        for row in rows:
+            self.gladia_table.removeRow(row)
+
+    def _gladia_keys(self) -> list[str]:
+        return [
+            str(self.gladia_table.item(row, 0).data(Qt.ItemDataRole.UserRole))
+            for row in range(self.gladia_table.rowCount())
+        ]
+
+    def save_keys(self) -> None:
+        try:
+            write_gladia_keys(GLADIA_KEYS_PATH, self._gladia_keys())
+            write_deepl_key(DEEPL_KEY_PATH, self.deepl_edit.text())
+        except OSError as exc:
+            QMessageBox.critical(self, "Save Failed", str(exc))
+            return
+        QMessageBox.information(self, "Saved", f"Keys saved in {GLADIA_KEYS_PATH.parent}")
+
+    def test_keys(self) -> None:
+        if self.check_thread is not None:
+            return
+        keys = self._gladia_keys()
+        deepl_key = self.deepl_edit.text().strip()
+        if not keys and not deepl_key:
+            QMessageBox.information(self, "No Keys", "Add at least one key before testing.")
+            return
+        self.test_button.setEnabled(False)
+        self.test_button.setText("Testing...")
+        self.check_thread = QThread(self)
+        self.check_worker = KeyCheckWorker(keys, deepl_key)
+        self.check_worker.moveToThread(self.check_thread)
+        self.check_thread.started.connect(self.check_worker.run)
+        self.check_worker.result_ready.connect(self.show_check_result)
+        self.check_worker.finished.connect(self.check_thread.quit)
+        self.check_worker.finished.connect(self.check_worker.deleteLater)
+        self.check_thread.finished.connect(self._check_finished)
+        self.check_thread.start()
+
+    @pyqtSlot(str, int, object)
+    def show_check_result(self, provider: str, index: int, result) -> None:
+        if provider == "gladia":
+            self.gladia_table.item(index, 1).setText(result.status)
+            if result.used is not None and result.limit is not None:
+                self.gladia_table.item(index, 2).setText(
+                    f"{result.used / 3600:.2f} / {result.limit / 3600:.0f} h; "
+                    f"remaining {result.remaining / 3600:.2f} h (Free estimate)"
+                )
+                self.gladia_table.item(index, 2).setToolTip(result.detail)
+            else:
+                self.gladia_table.item(index, 2).setText(result.detail or "Usage unavailable")
+            return
+        if result.used is not None and result.limit is not None:
+            self.deepl_status.setText(
+                f"{result.status}: used {result.used:,} / {result.limit:,}; remaining {result.remaining:,} characters"
+            )
+        else:
+            self.deepl_status.setText(f"{result.status}: {result.detail}".rstrip(": "))
+
+    @pyqtSlot()
+    def _check_finished(self) -> None:
+        if self.check_thread is not None:
+            self.check_thread.deleteLater()
+        self.check_thread = None
+        self.check_worker = None
+        self.test_button.setEnabled(True)
+        self.test_button.setText("Test All Keys")
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -248,6 +445,10 @@ class MainWindow(QMainWindow):
         add_folder_action.triggered.connect(self.select_folder)
         self.add_folder_action = add_folder_action
         toolbar.addAction(add_folder_action)
+
+        key_management_action = QAction("API Key Management", self)
+        key_management_action.triggered.connect(self.open_key_management)
+        toolbar.addAction(key_management_action)
 
         clear_action = QAction("Clear", self)
         clear_action.triggered.connect(self.clear_files)
@@ -1199,6 +1400,11 @@ class MainWindow(QMainWindow):
             needs_video_tools=needs_video_tools,
         )
 
+    def open_key_management(self) -> None:
+        dialog = KeyManagementDialog(self)
+        dialog.exec()
+        self.refresh_environment_status()
+
     def refresh_environment_status(self) -> None:
         checks = self._compute_environment_checks()
         self.last_environment_checks = checks
@@ -1368,6 +1574,26 @@ class MainWindow(QMainWindow):
 
 
 def main() -> int:
+    if "--self-test" in sys.argv:
+        index = sys.argv.index("--self-test")
+        if index + 1 >= len(sys.argv):
+            return 2
+        checks = collect_environment_checks(needs_translation=True, needs_video_tools=True)
+        payload = {
+            "config_root": str(GLADIA_KEYS_PATH.parent),
+            "jobs_root": str(JOBS_ROOT),
+            "gladia_keys_path": str(GLADIA_KEYS_PATH),
+            "gladia_key_count": len(read_gladia_keys(GLADIA_KEYS_PATH)),
+            "deepl_key_path": str(DEEPL_KEY_PATH),
+            "deepl_key_present": bool(read_deepl_key(DEEPL_KEY_PATH)),
+            "environment": [
+                {"name": check.name, "ok": check.ok, "detail": check.detail} for check in checks
+            ],
+        }
+        Path(sys.argv[index + 1]).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return 0 if payload["gladia_key_count"] and payload["deepl_key_present"] and all(
+            check["ok"] for check in payload["environment"]
+        ) else 1
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()

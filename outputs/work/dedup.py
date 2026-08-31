@@ -32,7 +32,8 @@ if len(sys.argv) < 2:
 raw_path = Path(sys.argv[1])
 out_path = Path(sys.argv[2]) if len(sys.argv) > 2 else raw_path.parent / "utt_clean.json"
 
-raw = json.load(open(raw_path))
+with raw_path.open("r", encoding="utf-8") as handle:
+    raw = json.load(handle)
 if "transcription" in raw and "utterances" in raw["transcription"]:
     utts = raw["transcription"]["utterances"]
 elif "segments" in raw:

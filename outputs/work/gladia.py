@@ -37,7 +37,12 @@ from pathlib import Path
 
 RUNTIME_ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 SCRIPT_DIR = RUNTIME_ROOT / "outputs" / "work" if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
-CONFIG_DIR = RUNTIME_ROOT / "config" if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent.parent / "config"
+CONFIG_DIR = Path(
+    os.environ.get(
+        "VIDEO2TEXT_CONFIG_DIR",
+        RUNTIME_ROOT / "config" if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent.parent / "config",
+    )
+).resolve()
 
 
 class MissingGladiaKeyError(RuntimeError):
@@ -331,6 +336,10 @@ def upload(rotator, src=None):
     status, data = _do_request(req, 180)
     print("upload status:", status, flush=True)
     if status >= 300:
+        if status in {401, 403} or is_key_problem(status, data):
+            raise AudioUrlKeyMismatch(
+                f"upload auth/quota/rate: {status} {data} - retry with a new key"
+            )
         raise GladiaUploadError(f"upload failed: {status} {data}")
     return data["audio_url"]
 
