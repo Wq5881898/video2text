@@ -188,8 +188,19 @@ async function submitTranscription(audioUrl) {
   return payload.id;
 }
 
-async function waitForTranscription(jobId) {
-  for (let index = 0; index < POLL_MAX_ITERS; index += 1) {
+async function pollTranscriptionWindow(jobId, options = {}) {
+  const maxIterations = Math.max(
+    1,
+    Number(options.maxIterations) || POLL_MAX_ITERS,
+  );
+  const pollIntervalMs = Math.max(
+    0,
+    Number.isFinite(options.pollIntervalMs)
+      ? Number(options.pollIntervalMs)
+      : POLL_INTERVAL_MS,
+  );
+  let lastStatus = "pending";
+  for (let index = 0; index < maxIterations; index += 1) {
     const response = await fetch(`${GLADIA_TRANSCRIBE_URL}/${jobId}`, {
       headers: {
         "x-gladia-key": ensureEnv("GLADIA_API_KEY"),
@@ -201,14 +212,23 @@ async function waitForTranscription(jobId) {
       );
     }
     const payload = await response.json();
+    lastStatus = String(payload.status || "pending");
     if (payload.status === "done") {
-      return payload.result || {};
+      return { done: true, result: payload.result || {}, status: "done" };
     }
     if (payload.status === "error") {
       throw new Error(`Gladia job failed: ${JSON.stringify(payload)}`);
     }
-    await sleep(POLL_INTERVAL_MS);
+    if (index + 1 < maxIterations) {
+      await sleep(pollIntervalMs);
+    }
   }
+  return { done: false, result: null, status: lastStatus };
+}
+
+async function waitForTranscription(jobId) {
+  const poll = await pollTranscriptionWindow(jobId);
+  if (poll.done) return poll.result;
   throw new Error("Transcription polling timed out");
 }
 
@@ -379,7 +399,7 @@ function outputFilename(sourceName, outputFormat) {
   return `${stem}.${outputFormat}`;
 }
 
-async function prepareJob(job, options = {}) {
+async function submitJob(job, options = {}) {
   const onStage =
     typeof options.onStage === "function" ? options.onStage : async () => {};
 
@@ -402,6 +422,13 @@ async function prepareJob(job, options = {}) {
   );
   await onStage("submit_transcription", "Submitting the transcription job.");
   const gladiaJobId = await submitTranscription(audioUrl);
+  return gladiaJobId;
+}
+
+async function prepareJob(job, options = {}) {
+  const onStage =
+    typeof options.onStage === "function" ? options.onStage : async () => {};
+  const gladiaJobId = await submitJob(job, options);
   await onStage(
     "poll_transcription",
     "Waiting for the speech engine to finish.",
@@ -483,10 +510,13 @@ module.exports = {
   jobStatusPath,
   jobWorkPath,
   makeJobId,
+  extractSegments,
+  pollTranscriptionWindow,
   prepareJob,
   processJob,
   readJson,
   renderJobResult,
+  submitJob,
   triggerJobContinuation,
   translateWorkBatch,
   translateSegments,

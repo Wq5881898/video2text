@@ -11,11 +11,20 @@ const {
 function continuationIsStale(payload) {
   if (payload?.status !== "processing") return false;
   const age = Date.now() - new Date(payload.updated_at || 0).getTime();
-  if (payload.stage === "translation_paused") return true;
-  if (["translation_checkpoint", "translation_resuming"].includes(payload.stage)) {
+  if (["translation_paused", "transcription_paused"].includes(payload.stage)) {
+    return true;
+  }
+  if (
+    [
+      "translation_checkpoint",
+      "translation_resuming",
+      "transcription_checkpoint",
+      "transcription_resuming",
+    ].includes(payload.stage)
+  ) {
     return age > 60_000;
   }
-  return payload.stage === "translating" && age > 240_000;
+  return ["translating", "poll_transcription"].includes(payload.stage) && age > 240_000;
 }
 
 module.exports = async function handler(req, res) {
@@ -62,13 +71,16 @@ module.exports = async function handler(req, res) {
       if (work) {
         const nextIndex = Math.max(0, Number(work.next_index) || 0);
         const total = Array.isArray(work.segments_en) ? work.segments_en.length : 0;
+        const transcribing = work.stage === "transcribing";
         const resumedPayload = {
           ...payload,
           updated_at: new Date().toISOString(),
           status: "processing",
-          stage: "translation_resuming",
-          message: "Restarting translation from the last saved checkpoint.",
-          progress: { completed: nextIndex, total },
+          stage: transcribing ? "transcription_resuming" : "translation_resuming",
+          message: transcribing
+            ? "Restarting transcription polling from the saved cloud job."
+            : "Restarting translation from the last saved checkpoint.",
+          ...(transcribing ? {} : { progress: { completed: nextIndex, total } }),
         };
         await updateJobStatus(jobId, resumedPayload);
         waitUntil(
@@ -80,8 +92,10 @@ module.exports = async function handler(req, res) {
             });
             await updateJobStatus(jobId, {
               ...resumedPayload,
-              stage: "translation_paused",
-              message: "Translation restart failed temporarily; the task page will retry.",
+              stage: transcribing ? "transcription_paused" : "translation_paused",
+              message: transcribing
+                ? "Transcription polling restart failed temporarily; the task page will retry."
+                : "Translation restart failed temporarily; the task page will retry.",
             });
           }),
         );

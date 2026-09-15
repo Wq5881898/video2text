@@ -1,7 +1,9 @@
 const { waitUntil } = require("@vercel/functions");
 const {
+  extractSegments,
   jobResultPath,
   jobWorkPath,
+  pollTranscriptionWindow,
   readJson,
   renderJobResult,
   triggerJobContinuation,
@@ -10,6 +12,64 @@ const {
   verifyJobWorkerSignature,
   writeJson,
 } = require("./jobs-lib");
+
+function scheduleContinuation({
+  jobId,
+  nextIndex,
+  work,
+  pausedStage,
+  pausedMessage,
+  progress,
+}) {
+  waitUntil(
+    triggerJobContinuation(jobId, nextIndex).catch(async (error) => {
+      console.error("[jobs-continue] unable to trigger next continuation", {
+        jobId,
+        nextIndex,
+        workStage: work.stage,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      await updateJobStatus(jobId, {
+        status: "processing",
+        stage: pausedStage,
+        message: pausedMessage,
+        request: work.job,
+        ...(progress ? { progress } : {}),
+      });
+    }),
+  );
+}
+
+async function completeJob(jobId, work, segmentsZh = null) {
+  const result = renderJobResult(work.job, work.segments_en, segmentsZh);
+  await writeJson(jobResultPath(jobId), {
+    job_id: jobId,
+    completed_at: new Date().toISOString(),
+    ...result,
+  });
+  await writeJson(jobWorkPath(jobId), {
+    ...work,
+    stage: "completed",
+    updated_at: new Date().toISOString(),
+  });
+  await updateJobStatus(jobId, {
+    status: "completed",
+    stage: "done",
+    message: "Transcript is ready.",
+    request: work.job,
+    progress: {
+      completed: work.segments_en.length,
+      total: work.segments_en.length,
+    },
+    result: {
+      output_filename: result.output_filename,
+      segment_count: result.segment_count,
+      translated: result.translated,
+      media_type: result.media_type,
+    },
+  });
+  return result;
+}
 
 module.exports = async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store, max-age=0");
@@ -36,23 +96,89 @@ module.exports = async function handler(req, res) {
     return;
   }
 
+  let work;
   try {
-    const work = await readJson(jobWorkPath(jobId));
+    work = await readJson(jobWorkPath(jobId));
     if (!work) {
       res.status(404).json({ ok: false, error: "job work checkpoint not found" });
       return;
     }
-    const currentIndex = Math.max(0, Number(work.next_index) || 0);
-    if (currentIndex !== requestedIndex) {
+    if (work.stage === "completed") {
+      res.status(200).json({ ok: true, status: "completed" });
+      return;
+    }
+
+    const savedIndex = Math.max(0, Number(work.next_index) || 0);
+    if (savedIndex !== requestedIndex) {
       res.status(200).json({
         ok: true,
         status: "stale_continuation_ignored",
-        next_index: currentIndex,
+        next_index: savedIndex,
       });
       return;
     }
 
+    if (work.stage === "transcribing") {
+      await updateJobStatus(jobId, {
+        status: "processing",
+        stage: "poll_transcription",
+        message: "Waiting for the speech engine to finish.",
+        request: work.job,
+        gladia_job_id: work.gladia_job_id,
+      });
+      const transcription = await pollTranscriptionWindow(work.gladia_job_id, {
+        maxIterations: 10,
+      });
+      if (!transcription.done) {
+        work = { ...work, updated_at: new Date().toISOString() };
+        await writeJson(jobWorkPath(jobId), work);
+        await updateJobStatus(jobId, {
+          status: "processing",
+          stage: "transcription_checkpoint",
+          message: "The speech engine is still working. Continuing in another cloud invocation.",
+          request: work.job,
+          gladia_job_id: work.gladia_job_id,
+        });
+        scheduleContinuation({
+          jobId,
+          nextIndex: 0,
+          work,
+          pausedStage: "transcription_paused",
+          pausedMessage: "Transcription polling paused temporarily; the task page will retry.",
+        });
+        res.status(200).json({ ok: true, status: "transcription_continued" });
+        return;
+      }
+
+      const segmentsEn = extractSegments(transcription.result);
+      if (!segmentsEn.length) {
+        throw new Error("No transcript segments were returned");
+      }
+      work = {
+        ...work,
+        stage: work.job.translate ? "translating" : "rendering",
+        segments_en: segmentsEn,
+        segments_zh: [],
+        next_index: 0,
+        updated_at: new Date().toISOString(),
+      };
+      await writeJson(jobWorkPath(jobId), work);
+      await updateJobStatus(jobId, {
+        status: "processing",
+        stage: "transcription_done",
+        message: `Transcript received with ${segmentsEn.length} segments.`,
+        request: work.job,
+        progress: { completed: 0, total: segmentsEn.length },
+      });
+      if (!work.job.translate) {
+        await completeJob(jobId, work);
+        res.status(200).json({ ok: true, status: "completed" });
+        return;
+      }
+    }
+
     const total = work.segments_en.length;
+    const currentIndex = Math.max(0, Number(work.next_index) || 0);
     await updateJobStatus(jobId, {
       status: "processing",
       stage: "translating",
@@ -61,33 +187,11 @@ module.exports = async function handler(req, res) {
       progress: { completed: currentIndex, total },
     });
 
-    const updated = await translateWorkBatch(work);
+    const updated = await translateWorkBatch({ ...work, stage: "translating" });
     await writeJson(jobWorkPath(jobId), updated);
     const nextIndex = updated.next_index;
     if (nextIndex >= total) {
-      const result = renderJobResult(
-        updated.job,
-        updated.segments_en,
-        updated.segments_zh,
-      );
-      await writeJson(jobResultPath(jobId), {
-        job_id: jobId,
-        completed_at: new Date().toISOString(),
-        ...result,
-      });
-      await updateJobStatus(jobId, {
-        status: "completed",
-        stage: "done",
-        message: "Transcript is ready.",
-        request: updated.job,
-        progress: { completed: total, total },
-        result: {
-          output_filename: result.output_filename,
-          segment_count: result.segment_count,
-          translated: result.translated,
-          media_type: result.media_type,
-        },
-      });
+      await completeJob(jobId, updated, updated.segments_zh);
       res.status(200).json({ ok: true, status: "completed", next_index: total });
       return;
     }
@@ -99,36 +203,32 @@ module.exports = async function handler(req, res) {
       request: updated.job,
       progress: { completed: nextIndex, total },
     });
-    waitUntil(
-      triggerJobContinuation(jobId, nextIndex).catch(async (error) => {
-        console.error("[jobs-continue] unable to trigger next batch", {
-          jobId,
-          nextIndex,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        await updateJobStatus(jobId, {
-          status: "processing",
-          stage: "translation_paused",
-          message: "The next translation batch could not start automatically.",
-          request: updated.job,
-          progress: { completed: nextIndex, total },
-        });
-      }),
-    );
+    scheduleContinuation({
+      jobId,
+      nextIndex,
+      work: updated,
+      pausedStage: "translation_paused",
+      pausedMessage: "The next translation batch could not start automatically.",
+      progress: { completed: nextIndex, total },
+    });
     res.status(200).json({ ok: true, status: "continued", next_index: nextIndex });
   } catch (error) {
-    console.error("[jobs-continue] translation batch failed", {
+    const transcribing = work?.stage === "transcribing";
+    console.error("[jobs-continue] continuation failed", {
       jobId,
       requestedIndex,
+      workStage: work?.stage,
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
     });
     await updateJobStatus(jobId, {
       status: "failed",
-      stage: "translation_failed",
-      message: "Translation failed before the next checkpoint was saved.",
+      stage: transcribing ? "transcription_failed" : "translation_failed",
+      message: transcribing
+        ? "Transcription failed before a checkpoint could be completed."
+        : "Translation failed before the next checkpoint was saved.",
       error: error instanceof Error ? error.message : String(error),
     });
-    res.status(500).json({ ok: false, error: "translation batch failed" });
+    res.status(500).json({ ok: false, error: "job continuation failed" });
   }
 };

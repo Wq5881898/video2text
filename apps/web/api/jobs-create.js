@@ -4,8 +4,7 @@ const {
   jobStatusPath,
   jobWorkPath,
   makeJobId,
-  prepareJob,
-  renderJobResult,
+  submitJob,
   triggerJobContinuation,
   updateJobStatus,
   writeJson,
@@ -104,7 +103,7 @@ module.exports = async function handler(req, res) {
             message: "Preparing job on the cloud runtime.",
             request: job,
           });
-          const segmentsEn = await prepareJob(job, {
+          const gladiaJobId = await submitJob(job, {
             onStage: async (stage, message, extra = {}) => {
               await updateJobStatus(jobId, {
                 status: "processing",
@@ -115,65 +114,44 @@ module.exports = async function handler(req, res) {
               });
             },
           });
-          if (job.translate) {
-            const work = {
-              job,
-              segments_en: segmentsEn,
-              segments_zh: [],
-              next_index: 0,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            };
-            await writeJson(jobWorkPath(jobId), work);
+          const work = {
+            job,
+            stage: "transcribing",
+            gladia_job_id: gladiaJobId,
+            segments_en: [],
+            segments_zh: [],
+            next_index: 0,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+          await writeJson(jobWorkPath(jobId), work);
+          await updateJobStatus(jobId, {
+            status: "processing",
+            stage: "transcription_checkpoint",
+            message: "Transcription job submitted. Waiting for the speech engine.",
+            request: job,
+            gladia_job_id: gladiaJobId,
+          });
+          try {
+            await triggerJobContinuation(jobId, 0);
+          } catch (error) {
+            console.error("[jobs-create] unable to start transcription continuation", {
+              jobId,
+              error: error instanceof Error ? error.message : String(error),
+            });
             await updateJobStatus(jobId, {
               status: "processing",
-              stage: "translation_checkpoint",
-              message: `Transcript saved. Starting translation of ${segmentsEn.length} subtitle segments.`,
+              stage: "transcription_paused",
+              message: "Transcription polling will restart when the task page reconnects.",
               request: job,
-              progress: { completed: 0, total: segmentsEn.length },
-            });
-            try {
-              await triggerJobContinuation(jobId, 0);
-            } catch (error) {
-              console.error("[jobs-create] unable to start translation continuation", {
-                jobId,
-                error: error instanceof Error ? error.message : String(error),
-              });
-              await updateJobStatus(jobId, {
-                status: "processing",
-                stage: "translation_paused",
-                message: "Translation will restart from its saved checkpoint when the task page reconnects.",
-                request: job,
-                progress: { completed: 0, total: segmentsEn.length },
-              });
-              return;
-            }
-            console.log("[jobs-create] translation continuation started", {
-              jobId,
-              segmentCount: segmentsEn.length,
+              gladia_job_id: gladiaJobId,
             });
             return;
           }
-
-          const result = renderJobResult(job, segmentsEn);
-          await writeJson(jobResultPath(jobId), {
-            job_id: jobId,
-            completed_at: new Date().toISOString(),
-            ...result,
+          console.log("[jobs-create] transcription continuation started", {
+            jobId,
+            gladiaJobId,
           });
-          await updateJobStatus(jobId, {
-            status: "completed",
-            stage: "done",
-            message: "Transcript is ready.",
-            request: job,
-            result: {
-              output_filename: result.output_filename,
-              segment_count: result.segment_count,
-              translated: result.translated,
-              media_type: result.media_type,
-            },
-          });
-          console.log("[jobs-create] job completed", { jobId, output: result.output_filename });
         } catch (error) {
           console.error("[jobs-create] background processing failed", {
             jobId,

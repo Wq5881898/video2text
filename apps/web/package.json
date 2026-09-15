@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "python dev_server.py",
     "build": "esbuild public/mobile.js --bundle --format=esm --platform=browser --target=safari15 --outfile=public/mobile.bundle.js",
-    "deploy": "vercel --prod"
+    "deploy": "vercel --prod",
+    "test:cloud": "node cloud_e2e_test.js"
   },
   "dependencies": {
     "@vercel/blob": "^2.6.1",

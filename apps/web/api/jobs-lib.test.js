@@ -1,6 +1,10 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { translateSegments, translateWorkBatch } = require("./jobs-lib");
+const {
+  pollTranscriptionWindow,
+  translateSegments,
+  translateWorkBatch,
+} = require("./jobs-lib");
 
 const source = [{ start: 0, end: 1, speaker: null, text: "Hello" }];
 
@@ -75,6 +79,61 @@ test("translation work advances one persisted batch at a time", async () => {
     assert.equal(second.segments_zh.length, 25);
     assert.equal(second.segments_zh[24].text, "ZH Line 24");
   });
+});
+
+test("transcription polling checkpoints instead of failing when still pending", async () => {
+  const previousFetch = global.fetch;
+  const previousKey = process.env.GLADIA_API_KEY;
+  process.env.GLADIA_API_KEY = "test-gladia-key";
+  global.fetch = async () => ({
+    ok: true,
+    json: async () => ({ status: "processing" }),
+  });
+  try {
+    const result = await pollTranscriptionWindow("gladia-job", {
+      maxIterations: 1,
+      pollIntervalMs: 0,
+    });
+    assert.deepEqual(result, {
+      done: false,
+      result: null,
+      status: "processing",
+    });
+  } finally {
+    global.fetch = previousFetch;
+    if (previousKey === undefined) delete process.env.GLADIA_API_KEY;
+    else process.env.GLADIA_API_KEY = previousKey;
+  }
+});
+
+test("transcription polling returns a later completed result", async () => {
+  const previousFetch = global.fetch;
+  const previousKey = process.env.GLADIA_API_KEY;
+  process.env.GLADIA_API_KEY = "test-gladia-key";
+  let calls = 0;
+  global.fetch = async () => {
+    calls += 1;
+    return {
+      ok: true,
+      json: async () =>
+        calls === 1
+          ? { status: "processing" }
+          : { status: "done", result: { transcription: { utterances: [] } } },
+    };
+  };
+  try {
+    const result = await pollTranscriptionWindow("gladia-job", {
+      maxIterations: 2,
+      pollIntervalMs: 0,
+    });
+    assert.equal(result.done, true);
+    assert.equal(result.status, "done");
+    assert.equal(calls, 2);
+  } finally {
+    global.fetch = previousFetch;
+    if (previousKey === undefined) delete process.env.GLADIA_API_KEY;
+    else process.env.GLADIA_API_KEY = previousKey;
+  }
 });
 
 test("MiniMax rejects mismatched ids", async () => {
