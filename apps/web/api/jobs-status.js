@@ -1,6 +1,25 @@
-const { jobResultPath, jobStatusPath, readJson } = require("./jobs-lib");
+const { waitUntil } = require("@vercel/functions");
+const {
+  jobResultPath,
+  jobStatusPath,
+  jobWorkPath,
+  readJson,
+  triggerJobContinuation,
+  updateJobStatus,
+} = require("./jobs-lib");
+
+function continuationIsStale(payload) {
+  if (payload?.status !== "processing") return false;
+  const age = Date.now() - new Date(payload.updated_at || 0).getTime();
+  if (payload.stage === "translation_paused") return true;
+  if (["translation_checkpoint", "translation_resuming"].includes(payload.stage)) {
+    return age > 60_000;
+  }
+  return payload.stage === "translating" && age > 240_000;
+}
 
 module.exports = async function handler(req, res) {
+  res.setHeader("Cache-Control", "no-store, max-age=0");
   if (req.method !== "GET") {
     res.status(405).json({ ok: false, error: "Method not allowed" });
     return;
@@ -12,30 +31,73 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const payload = await readJson(jobStatusPath(jobId));
-  if (!payload) {
-    res.status(404).json({ ok: false, error: "job not found" });
-    return;
-  }
-
-  const resultPayload = await readJson(jobResultPath(jobId));
-  if (resultPayload) {
-    res.status(200).json({
-      ok: true,
-      ...payload,
-      status: "completed",
-      stage: "done",
-      message: "Transcript is ready.",
-      result: {
-        output_filename: resultPayload.output_filename,
-        segment_count: resultPayload.segment_count,
-        translated: resultPayload.translated,
-        media_type: resultPayload.media_type,
-      },
-      completed_at: resultPayload.completed_at,
+  try {
+    const [payload, resultPayload] = await Promise.all([
+      readJson(jobStatusPath(jobId)),
+      readJson(jobResultPath(jobId)),
+    ]);
+    if (resultPayload) {
+      res.status(200).json({
+        ok: true,
+        ...(payload || { job_id: jobId }),
+        status: "completed",
+        stage: "done",
+        message: "Transcript is ready.",
+        result: {
+          output_filename: resultPayload.output_filename,
+          segment_count: resultPayload.segment_count,
+          translated: resultPayload.translated,
+          media_type: resultPayload.media_type,
+        },
+        completed_at: resultPayload.completed_at,
+      });
+      return;
+    }
+    if (!payload) {
+      res.status(404).json({ ok: false, error: "job status is not visible yet" });
+      return;
+    }
+    if (continuationIsStale(payload)) {
+      const work = await readJson(jobWorkPath(jobId));
+      if (work) {
+        const nextIndex = Math.max(0, Number(work.next_index) || 0);
+        const total = Array.isArray(work.segments_en) ? work.segments_en.length : 0;
+        const resumedPayload = {
+          ...payload,
+          updated_at: new Date().toISOString(),
+          status: "processing",
+          stage: "translation_resuming",
+          message: "Restarting translation from the last saved checkpoint.",
+          progress: { completed: nextIndex, total },
+        };
+        await updateJobStatus(jobId, resumedPayload);
+        waitUntil(
+          triggerJobContinuation(jobId, nextIndex).catch(async (error) => {
+            console.error("[jobs-status] continuation restart failed", {
+              jobId,
+              nextIndex,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            await updateJobStatus(jobId, {
+              ...resumedPayload,
+              stage: "translation_paused",
+              message: "Translation restart failed temporarily; the task page will retry.",
+            });
+          }),
+        );
+        res.status(200).json({ ok: true, ...resumedPayload });
+        return;
+      }
+    }
+    res.status(200).json({ ok: true, ...payload });
+  } catch (error) {
+    console.error("[jobs-status] lookup failed", {
+      jobId,
+      error: error instanceof Error ? error.message : String(error),
     });
-    return;
+    res.status(503).json({
+      ok: false,
+      error: "Job status storage is temporarily unavailable. Retrying is safe.",
+    });
   }
-
-  res.status(200).json({ ok: true, ...payload });
 };

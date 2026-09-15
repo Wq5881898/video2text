@@ -12,6 +12,7 @@ async function fetchJson(url, options) {
 
 let pollTimer = null;
 let lastResult = null;
+let lookupFailures = 0;
 
 function jobIdFromPath() {
   const parts = window.location.pathname.split("/").filter(Boolean);
@@ -69,30 +70,62 @@ async function refreshJob() {
     return;
   }
 
-  const statusResponse = await fetchJson(
-    `../api/jobs-status?job_id=${encodeURIComponent(id)}`,
-  );
+  let statusResponse;
+  try {
+    statusResponse = await fetchJson(
+      `/api/jobs-status?job_id=${encodeURIComponent(id)}&_=${Date.now()}`,
+      { cache: "no-store" },
+    );
+  } catch (error) {
+    statusResponse = {
+      ok: false,
+      status: 0,
+      payload: { error: error instanceof Error ? error.message : String(error) },
+    };
+  }
   if (!statusResponse.ok || !statusResponse.payload?.ok) {
+    lookupFailures += 1;
     renderStatus({
-      status: "failed",
-      stage: "status_lookup_failed",
-      message: statusResponse.payload?.error || "Could not load job status.",
+      status: "reconnecting",
+      stage: "status_lookup_retry",
+      message: "The task page temporarily lost access to job status. Retrying automatically.",
       job_id: id,
       updated_at: "-",
+      lookup_attempt: lookupFailures,
+      http_status: statusResponse.status,
+      lookup_error: statusResponse.payload?.error || "Could not load job status.",
     });
+    stopPolling();
+    pollTimer = window.setTimeout(
+      refreshJob,
+      Math.min(3000 + lookupFailures * 500, 10000),
+    );
     return;
   }
 
+  lookupFailures = 0;
   renderStatus(statusResponse.payload);
 
   if (statusResponse.payload.status === "completed") {
-    const resultResponse = await fetchJson(
-      `../api/jobs-result?job_id=${encodeURIComponent(id)}`,
-    );
+    let resultResponse;
+    try {
+      resultResponse = await fetchJson(
+        `/api/jobs-result?job_id=${encodeURIComponent(id)}&_=${Date.now()}`,
+        { cache: "no-store" },
+      );
+    } catch (error) {
+      resultResponse = {
+        ok: false,
+        payload: { error: error instanceof Error ? error.message : String(error) },
+      };
+    }
     if (resultResponse.ok && resultResponse.payload?.ok) {
       renderResult(resultResponse.payload);
+      stopPolling();
+      return;
     }
     stopPolling();
+    pollTimer = window.setTimeout(refreshJob, 3000);
     return;
   }
 

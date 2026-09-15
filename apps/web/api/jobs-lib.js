@@ -4,11 +4,12 @@ const { put, get } = require("@vercel/blob");
 const GLADIA_BASE = "https://api.gladia.io/v2";
 const GLADIA_UPLOAD_URL = `${GLADIA_BASE}/upload`;
 const GLADIA_TRANSCRIBE_URL = `${GLADIA_BASE}/pre-recorded`;
-const DEEPL_URL = "https://api-free.deepl.com/v2/translate";
+const MINIMAX_BASE_URL = "https://api.minimaxi.com/v1";
 const POLL_INTERVAL_MS = 5000;
 const POLL_MAX_ITERS = 11;
-const DEEPL_BATCH_SIZE = 40;
-const DEEPL_MAX_CHARS = 45000;
+const TRANSLATION_BATCH_SIZE = 20;
+const TRANSLATION_MAX_CHARS = 12000;
+const BLOB_READ_ATTEMPTS = 3;
 
 function ensureEnv(name) {
   const value = process.env[name];
@@ -30,22 +31,85 @@ function jobResultPath(jobId) {
   return `jobs/${jobId}/result.json`;
 }
 
+function jobWorkPath(jobId) {
+  return `jobs/${jobId}/work.json`;
+}
+
+function jobWorkerSignature(jobId, nextIndex) {
+  return crypto
+    .createHmac("sha256", ensureEnv("MINIMAX_API_KEY"))
+    .update(`${jobId}:${nextIndex}`)
+    .digest("hex");
+}
+
+function verifyJobWorkerSignature(jobId, nextIndex, signature) {
+  const expected = Buffer.from(jobWorkerSignature(jobId, nextIndex));
+  const received = Buffer.from(String(signature || ""));
+  return received.length === expected.length && crypto.timingSafeEqual(received, expected);
+}
+
+async function triggerJobContinuation(jobId, nextIndex) {
+  const host = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;
+  if (!host) {
+    throw new Error("Vercel runtime URL is unavailable for job continuation");
+  }
+  const baseUrl = host.startsWith("http") ? host : `https://${host}`;
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetch(`${baseUrl}/api/jobs-continue`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-video2text-job-signature": jobWorkerSignature(jobId, nextIndex),
+        },
+        body: JSON.stringify({ job_id: jobId, next_index: nextIndex }),
+      });
+      if (!response.ok) {
+        throw new Error(`Continuation request failed: HTTP ${response.status} ${await response.text()}`);
+      }
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < 3) {
+        await sleep(500 * attempt);
+      }
+    }
+  }
+  throw lastError;
+}
+
 async function writeJson(pathname, data) {
   return put(pathname, JSON.stringify(data, null, 2), {
     access: "public",
     addRandomSuffix: false,
     allowOverwrite: true,
     contentType: "application/json; charset=utf-8",
+    cacheControlMaxAge: 60,
   });
 }
 
 async function readJson(pathname) {
-  const response = await get(pathname, { access: "public" });
-  if (!response || response.statusCode !== 200 || !response.stream) {
-    return null;
+  let lastError;
+  for (let attempt = 1; attempt <= BLOB_READ_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await get(pathname, {
+        access: "public",
+        headers: { "cache-control": "no-cache" },
+      });
+      if (!response || response.statusCode !== 200 || !response.stream) {
+        return null;
+      }
+      const text = await new Response(response.stream).text();
+      return JSON.parse(text);
+    } catch (error) {
+      lastError = error;
+      if (attempt < BLOB_READ_ATTEMPTS) {
+        await sleep(200 * attempt);
+      }
+    }
   }
-  const text = await new Response(response.stream).text();
-  return JSON.parse(text);
+  throw lastError;
 }
 
 function sleep(ms) {
@@ -160,29 +224,79 @@ function extractSegments(result) {
     .filter((item) => item.text);
 }
 
-async function translateBatch(texts) {
-  const params = new URLSearchParams();
-  for (const text of texts) {
-    params.append("text", text);
-  }
-  params.set("source_lang", "EN");
-  params.set("target_lang", "ZH");
-  const response = await fetch(DEEPL_URL, {
+async function requestTranslationBatch(texts) {
+  const segments = texts.map((text, id) => ({ id, text }));
+  const baseUrl = (process.env.MINIMAX_BASE_URL || MINIMAX_BASE_URL).replace(/\/$/, "");
+  const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
-      Authorization: `DeepL-Auth-Key ${ensureEnv("DEEPL_KEY")}`,
-      "content-type": "application/x-www-form-urlencoded",
+      Authorization: `Bearer ${ensureEnv("MINIMAX_API_KEY")}`,
+      "content-type": "application/json",
     },
-    body: params.toString(),
+    body: JSON.stringify({
+      model: process.env.MINIMAX_MODEL || "MiniMax-M3",
+      temperature: 0,
+      max_tokens: 4000,
+      reasoning_split: true,
+      thinking: { type: "disabled" },
+      messages: [
+        { role: "system", content: "Translate each English subtitle into natural Simplified Chinese. Preserve meaning, names, numbers, tone and every id. Never merge, split or omit segments. Return exactly one plain-text line per segment: the numeric id, one tab character, then the translation. Example: 0\tChinese translation. Do not use JSON, Markdown, explanations, blank lines, or extra text." },
+        { role: "user", content: JSON.stringify({ segments }) },
+      ],
+    }),
   });
   if (!response.ok) {
-    throw new Error(
-      `DeepL translation failed: HTTP ${response.status} ${await response.text()}`,
-    );
+    throw new Error(`MiniMax translation failed: HTTP ${response.status} ${await response.text()}`);
   }
   const payload = await response.json();
-  const translations = payload.translations || [];
-  return translations.map((item) => String(item.text || "").trim());
+  const choice = payload.choices?.[0];
+  if (choice?.finish_reason !== "stop") {
+    throw new Error(`MiniMax output incomplete: ${choice?.finish_reason}`);
+  }
+  let content = String(choice.message?.content || "").trim();
+  if (content.startsWith("```")) content = content.replace(/^```(?:json)?\s*/, "").replace(/```$/, "").trim();
+  let translations;
+  try {
+    translations = JSON.parse(content).translations;
+  } catch {
+    translations = content.split(/\r?\n/).filter(Boolean).map((line) => {
+      const match = line.match(/^\s*(\d+)\s*\t\s*(.+?)\s*$/);
+      return match ? { id: Number(match[1]), text: match[2] } : null;
+    });
+  }
+  if (!Array.isArray(translations) || translations.length !== texts.length ||
+      translations.some((item, index) => !item || Number(item.id) !== index || !String(item.text || "").trim())) {
+    throw new Error("MiniMax returned missing or mismatched translations");
+  }
+  return translations.map((item) => String(item.text).trim());
+}
+
+async function translateBatch(texts) {
+  let lastError;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      return await requestTranslationBatch(texts);
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      if (/MINIMAX_API_KEY is not configured|HTTP (401|402|403|429)/.test(message)) throw error;
+      console.warn("[minimax] translation batch retry", { size: texts.length, attempt, error: message });
+      if (attempt < 2) await sleep(500);
+    }
+  }
+  if (texts.length === 1) {
+    throw new Error(`MiniMax translation failed after retries: ${lastError?.message || lastError}`);
+  }
+  if (!(lastError instanceof SyntaxError) &&
+      !/MiniMax (output incomplete|returned missing or mismatched translations)/.test(lastError?.message || "")) {
+    throw lastError;
+  }
+  const middle = Math.floor(texts.length / 2);
+  console.warn("[minimax] splitting failed translation batch", { size: texts.length, middle });
+  return [
+    ...(await translateBatch(texts.slice(0, middle))),
+    ...(await translateBatch(texts.slice(middle))),
+  ];
 }
 
 async function translateSegments(segments) {
@@ -203,8 +317,8 @@ async function translateSegments(segments) {
     const text = segment.text;
     if (
       batch.length &&
-      (batch.length >= DEEPL_BATCH_SIZE ||
-        batchChars + text.length > DEEPL_MAX_CHARS)
+      (batch.length >= TRANSLATION_BATCH_SIZE ||
+        batchChars + text.length > TRANSLATION_MAX_CHARS)
     ) {
       await flush();
     }
@@ -265,7 +379,7 @@ function outputFilename(sourceName, outputFormat) {
   return `${stem}.${outputFormat}`;
 }
 
-async function processJob(job, options = {}) {
+async function prepareJob(job, options = {}) {
   const onStage =
     typeof options.onStage === "function" ? options.onStage : async () => {};
 
@@ -304,15 +418,14 @@ async function processJob(job, options = {}) {
     "transcription_done",
     `Transcript received with ${segmentsEn.length} segments.`,
   );
-  const segmentsZh = job.translate ? await translateSegments(segmentsEn) : null;
-  if (job.translate) {
-    await onStage("translation_done", "Chinese translation completed.");
-  }
+  return segmentsEn;
+}
+
+function renderJobResult(job, segmentsEn, segmentsZh = null) {
   const outputText =
     job.output_format === "srt"
       ? renderSrt(segmentsEn, segmentsZh)
       : renderTxt(segmentsEn, segmentsZh);
-  await onStage("render_done", "Formatting the final output file.");
   return {
     output_filename: outputFilename(job.file_name, job.output_format),
     output_text: outputText,
@@ -320,6 +433,41 @@ async function processJob(job, options = {}) {
     translated: Boolean(segmentsZh),
     media_type: job.media_type,
   };
+}
+
+async function translateWorkBatch(work) {
+  const segmentsEn = Array.isArray(work.segments_en) ? work.segments_en : [];
+  const start = Math.max(0, Number(work.next_index) || 0);
+  const end = Math.min(start + TRANSLATION_BATCH_SIZE, segmentsEn.length);
+  if (start >= end) {
+    return { ...work, next_index: segmentsEn.length };
+  }
+  const sourceBatch = segmentsEn.slice(start, end);
+  const texts = await translateBatch(sourceBatch.map((segment) => segment.text));
+  const translatedBatch = texts.map((text, index) => ({
+    ...sourceBatch[index],
+    text,
+  }));
+  const previous = Array.isArray(work.segments_zh)
+    ? work.segments_zh.slice(0, start)
+    : [];
+  return {
+    ...work,
+    segments_zh: [...previous, ...translatedBatch],
+    next_index: end,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+async function processJob(job, options = {}) {
+  const onStage =
+    typeof options.onStage === "function" ? options.onStage : async () => {};
+  const segmentsEn = await prepareJob(job, options);
+  const segmentsZh = job.translate ? await translateSegments(segmentsEn) : null;
+  if (job.translate) {
+    await onStage("translation_done", "Chinese translation completed.");
+  }
+  return renderJobResult(job, segmentsEn, segmentsZh);
 }
 
 async function updateJobStatus(jobId, data) {
@@ -333,9 +481,16 @@ async function updateJobStatus(jobId, data) {
 module.exports = {
   jobResultPath,
   jobStatusPath,
+  jobWorkPath,
   makeJobId,
+  prepareJob,
   processJob,
   readJson,
+  renderJobResult,
+  triggerJobContinuation,
+  translateWorkBatch,
+  translateSegments,
   updateJobStatus,
+  verifyJobWorkerSignature,
   writeJson,
 };

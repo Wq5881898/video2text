@@ -2,8 +2,11 @@
 const {
   jobResultPath,
   jobStatusPath,
+  jobWorkPath,
   makeJobId,
-  processJob,
+  prepareJob,
+  renderJobResult,
+  triggerJobContinuation,
   updateJobStatus,
   writeJson,
 } = require("./jobs-lib");
@@ -101,7 +104,7 @@ module.exports = async function handler(req, res) {
             message: "Preparing job on the cloud runtime.",
             request: job,
           });
-          const result = await processJob(job, {
+          const segmentsEn = await prepareJob(job, {
             onStage: async (stage, message, extra = {}) => {
               await updateJobStatus(jobId, {
                 status: "processing",
@@ -112,6 +115,47 @@ module.exports = async function handler(req, res) {
               });
             },
           });
+          if (job.translate) {
+            const work = {
+              job,
+              segments_en: segmentsEn,
+              segments_zh: [],
+              next_index: 0,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            };
+            await writeJson(jobWorkPath(jobId), work);
+            await updateJobStatus(jobId, {
+              status: "processing",
+              stage: "translation_checkpoint",
+              message: `Transcript saved. Starting translation of ${segmentsEn.length} subtitle segments.`,
+              request: job,
+              progress: { completed: 0, total: segmentsEn.length },
+            });
+            try {
+              await triggerJobContinuation(jobId, 0);
+            } catch (error) {
+              console.error("[jobs-create] unable to start translation continuation", {
+                jobId,
+                error: error instanceof Error ? error.message : String(error),
+              });
+              await updateJobStatus(jobId, {
+                status: "processing",
+                stage: "translation_paused",
+                message: "Translation will restart from its saved checkpoint when the task page reconnects.",
+                request: job,
+                progress: { completed: 0, total: segmentsEn.length },
+              });
+              return;
+            }
+            console.log("[jobs-create] translation continuation started", {
+              jobId,
+              segmentCount: segmentsEn.length,
+            });
+            return;
+          }
+
+          const result = renderJobResult(job, segmentsEn);
           await writeJson(jobResultPath(jobId), {
             job_id: jobId,
             completed_at: new Date().toISOString(),
