@@ -27,6 +27,32 @@ def application_root() -> Path:
 CONFIG_ROOT = Path(os.environ.get("VIDEO2TEXT_CONFIG_DIR", application_root() / "config")).resolve()
 GLADIA_KEYS_PATH = CONFIG_ROOT / "gladia_keys.txt"
 DEEPL_KEY_PATH = CONFIG_ROOT / "deepl_key.txt"
+MINIMAX_CONFIG_PATH = CONFIG_ROOT / "minimax.json"
+GLM_CONFIG_PATH = CONFIG_ROOT / "glm.json"
+QWEN_CONFIG_PATH = CONFIG_ROOT / "qwen.json"
+TRANSLATION_PROVIDERS = {
+    "minimax": {
+        "label": "MiniMax M3",
+        "config_path": MINIMAX_CONFIG_PATH,
+        "env_prefix": "MINIMAX",
+        "base_url": "https://api.minimaxi.com/v1",
+        "model": "MiniMax-M3",
+    },
+    "glm": {
+        "label": "GLM",
+        "config_path": GLM_CONFIG_PATH,
+        "env_prefix": "GLM",
+        "base_url": "https://api.z.ai/api/coding/paas/v4",
+        "model": "glm-5.3-flash",
+    },
+    "qwen": {
+        "label": "Qwen",
+        "config_path": QWEN_CONFIG_PATH,
+        "env_prefix": "QWEN",
+        "base_url": "",
+        "model": "",
+    },
+}
 os.environ.setdefault("VIDEO2TEXT_CONFIG_DIR", str(CONFIG_ROOT))
 
 
@@ -73,6 +99,57 @@ def read_deepl_key(path: Path) -> str:
     return ""
 
 
+def normalize_translation_provider(provider: str) -> str:
+    normalized = provider.strip().lower()
+    if normalized not in TRANSLATION_PROVIDERS:
+        supported = ", ".join(TRANSLATION_PROVIDERS)
+        raise ValueError(f"Unsupported translation provider {provider!r}; choose one of: {supported}")
+    return normalized
+
+
+def translation_provider_label(provider: str) -> str:
+    normalized = normalize_translation_provider(provider)
+    return str(TRANSLATION_PROVIDERS[normalized]["label"])
+
+
+def translation_config_path(provider: str) -> Path:
+    normalized = normalize_translation_provider(provider)
+    return Path(TRANSLATION_PROVIDERS[normalized]["config_path"])
+
+
+def read_translation_config(provider: str, path: Path | None = None) -> dict[str, str]:
+    normalized = normalize_translation_provider(provider)
+    spec = TRANSLATION_PROVIDERS[normalized]
+    target = path or Path(spec["config_path"])
+    payload: dict = {}
+    if target.exists():
+        try:
+            payload = json.loads(target.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError):
+            payload = {}
+    env_prefix = str(spec["env_prefix"])
+    return {
+        "base_url": os.environ.get(f"{env_prefix}_BASE_URL", "").strip()
+        or str(payload.get("base_url") or spec["base_url"]).strip(),
+        "api_key": os.environ.get(f"{env_prefix}_API_KEY", "").strip()
+        or str(payload.get("api_key") or "").strip(),
+        "model": os.environ.get(f"{env_prefix}_MODEL", "").strip()
+        or str(payload.get("model") or spec["model"]).strip(),
+    }
+
+
+def read_translation_key(provider: str, path: Path | None = None) -> str:
+    return read_translation_config(provider, path)["api_key"]
+
+
+def read_minimax_config(path: Path = MINIMAX_CONFIG_PATH) -> dict[str, str]:
+    return read_translation_config("minimax", path)
+
+
+def read_minimax_key(path: Path = MINIMAX_CONFIG_PATH) -> str:
+    return read_translation_key("minimax", path)
+
+
 def _atomic_write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
@@ -96,6 +173,18 @@ def write_gladia_keys(path: Path, keys: list[str]) -> None:
 def write_deepl_key(path: Path, key: str) -> None:
     clean = key.strip()
     _atomic_write(path, f"{clean}\n" if clean else "")
+
+
+def write_minimax_key(path: Path, key: str) -> None:
+    write_translation_key("minimax", key, path)
+
+
+def write_translation_key(provider: str, key: str, path: Path | None = None) -> None:
+    normalized = normalize_translation_provider(provider)
+    target = path or translation_config_path(normalized)
+    config = read_translation_config(normalized, target)
+    config["api_key"] = key.strip()
+    _atomic_write(target, json.dumps(config, ensure_ascii=False, indent=2) + "\n")
 
 
 def _request_json(request: urllib.request.Request, timeout: int) -> tuple[int, dict]:
@@ -180,3 +269,46 @@ def check_deepl_key(key: str, timeout: int = 15) -> KeyCheckResult:
     if status == 456:
         return KeyCheckResult(True, "Quota exhausted", "Monthly character quota is exhausted.")
     return KeyCheckResult(False, "Unknown", f"DeepL returned HTTP {status}.")
+
+
+def check_translation_key(provider: str, key: str, timeout: int = 30) -> KeyCheckResult:
+    normalized = normalize_translation_provider(provider)
+    config = read_translation_config(normalized)
+    label = translation_provider_label(normalized)
+    if not config["base_url"] or not config["model"]:
+        return KeyCheckResult(False, "Not configured", f"Set base_url and model in {translation_config_path(normalized)}.")
+    request_payload = {
+        "model": config["model"],
+        "max_tokens": 16,
+        "messages": [{"role": "user", "content": "Reply OK only."}],
+    }
+    if normalized == "minimax":
+        request_payload.update({"reasoning_split": True, "thinking": {"type": "disabled"}})
+    elif normalized == "glm":
+        request_payload["thinking"] = {"type": "disabled"}
+    request = urllib.request.Request(
+        f"{config['base_url'].rstrip('/')}/chat/completions",
+        data=json.dumps(request_payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {key.strip()}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        status, payload = _request_json(request, timeout)
+    except (OSError, urllib.error.URLError) as exc:
+        return KeyCheckResult(False, "Network error", str(exc))
+    if status == 200 and payload.get("choices"):
+        actual_model = payload.get("model") or config["model"]
+        return KeyCheckResult(True, "Valid", f"Connected to {actual_model}. Usage is not exposed by this endpoint.")
+    if status in {401, 403}:
+        return KeyCheckResult(False, "Invalid", "Authentication rejected.")
+    if status in {402, 429}:
+        return KeyCheckResult(False, "Limited", f"{label} returned HTTP {status}; check quota or rate limits.")
+    return KeyCheckResult(False, "Unavailable", f"{label} returned HTTP {status}.")
+
+
+def check_minimax_key(key: str, timeout: int = 30) -> KeyCheckResult:
+    return check_translation_key("minimax", key, timeout)

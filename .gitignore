@@ -5,6 +5,9 @@ outputs/work/deeplkey.txt
 outputs/work/deepl_key
 config/gladia_keys.txt
 config/deepl_key.txt
+config/qwen.json
+config/glm.json
+config/minimax.json
 .env
 
 # Python cache
@@ -52,6 +55,7 @@ outputs/_review/
 
 # Manual validation sandbox
 sandbox/
+tests/artifacts/
 
 # Local build artifacts
 build/

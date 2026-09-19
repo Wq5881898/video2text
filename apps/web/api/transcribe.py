@@ -36,6 +36,7 @@ _PIPELINE = importlib.util.module_from_spec(_PIPELINE_SPEC)
 assert _PIPELINE_SPEC is not None and _PIPELINE_SPEC.loader is not None
 _PIPELINE_SPEC.loader.exec_module(_PIPELINE)
 process_media = _PIPELINE.process_media
+LongAudioRequiresBackground = _PIPELINE.LongAudioRequiresBackground
 
 
 def _json_from_request(request) -> dict:
@@ -216,6 +217,15 @@ def handler(request=None):
                 "repo_root": str(REPO_ROOT),
                 "execution_mode": "sync-direct",
             },
+        }
+    except LongAudioRequiresBackground as exc:
+        print(f"[transcribe] request_id={request_id} status=background_required")
+        return {
+            "ok": False,
+            "status": "background_required",
+            "request_id": request_id,
+            "message": "Long audio requires automatic splitting in a background job.",
+            "error": str(exc),
         }
     except Exception as exc:  # noqa: BLE001
         print(f"[transcribe] request_id={request_id} status=failed error={exc}")

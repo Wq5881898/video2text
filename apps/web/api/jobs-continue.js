@@ -1,12 +1,14 @@
 const { waitUntil } = require("@vercel/functions");
+const crypto = require("node:crypto");
+const { BlobPreconditionFailedError } = require("@vercel/blob");
 const {
-  extractSegments,
+  continuationCursor,
   jobResultPath,
   jobWorkPath,
-  pollTranscriptionWindow,
   readJson,
   renderJobResult,
   triggerJobContinuation,
+  transcribeWorkWindow,
   translateWorkBatch,
   updateJobStatus,
   verifyJobWorkerSignature,
@@ -97,18 +99,32 @@ module.exports = async function handler(req, res) {
   }
 
   let work;
+  let workEtag;
+  let leaseOwned = false;
+  async function saveWork(updated) {
+    const saved = await writeJson(jobWorkPath(jobId), updated, { ifMatch: workEtag });
+    workEtag = saved.etag;
+    work = updated;
+  }
+  async function releaseLease() {
+    if (!leaseOwned) return;
+    await saveWork({ ...work, worker_lease: null });
+    leaseOwned = false;
+  }
   try {
-    work = await readJson(jobWorkPath(jobId));
-    if (!work) {
+    const record = await readJson(jobWorkPath(jobId), { withMetadata: true });
+    if (!record) {
       res.status(404).json({ ok: false, error: "job work checkpoint not found" });
       return;
     }
+    work = record.value;
+    workEtag = record.etag;
     if (work.stage === "completed") {
       res.status(200).json({ ok: true, status: "completed" });
       return;
     }
 
-    const savedIndex = Math.max(0, Number(work.next_index) || 0);
+    const savedIndex = continuationCursor(work);
     if (savedIndex !== requestedIndex) {
       res.status(200).json({
         ok: true,
@@ -119,50 +135,49 @@ module.exports = async function handler(req, res) {
     }
 
     if (work.stage === "transcribing") {
-      await updateJobStatus(jobId, {
-        status: "processing",
-        stage: "poll_transcription",
-        message: "Waiting for the speech engine to finish.",
-        request: work.job,
-        gladia_job_id: work.gladia_job_id,
+      if (Number(work.worker_lease?.expires_at) > Date.now()) {
+        res.status(200).json({ ok: true, status: "worker_already_running" });
+        return;
+      }
+      if (!workEtag) throw new Error("Checkpoint ETag is missing; refusing a duplicate paid submission");
+      await saveWork({
+        ...work,
+        worker_lease: { id: crypto.randomUUID(), expires_at: Date.now() + 360000 },
       });
-      const transcription = await pollTranscriptionWindow(work.gladia_job_id, {
+      leaseOwned = true;
+      const transcription = await transcribeWorkWindow(work, {
         maxIterations: 10,
+        onCheckpoint: saveWork,
+        onStage: async (stage, message, extra = {}) => updateJobStatus(jobId, {
+          status: "processing", stage, message, request: work.job, ...extra,
+        }),
       });
+      work = transcription.work;
+      await releaseLease();
       if (!transcription.done) {
-        work = { ...work, updated_at: new Date().toISOString() };
-        await writeJson(jobWorkPath(jobId), work);
         await updateJobStatus(jobId, {
           status: "processing",
           stage: "transcription_checkpoint",
-          message: "The speech engine is still working. Continuing in another cloud invocation.",
+          message: transcription.prepared
+            ? `Audio will be processed in ${work.media_plan.parts.length} part(s).`
+            : `Transcribed ${transcription.progress.completed} of ${transcription.progress.total} audio parts. Continuing automatically.`,
           request: work.job,
           gladia_job_id: work.gladia_job_id,
+          progress: transcription.progress,
         });
         scheduleContinuation({
           jobId,
-          nextIndex: 0,
+          nextIndex: continuationCursor(work),
           work,
           pausedStage: "transcription_paused",
           pausedMessage: "Transcription polling paused temporarily; the task page will retry.",
+          progress: transcription.progress,
         });
         res.status(200).json({ ok: true, status: "transcription_continued" });
         return;
       }
 
-      const segmentsEn = extractSegments(transcription.result);
-      if (!segmentsEn.length) {
-        throw new Error("No transcript segments were returned");
-      }
-      work = {
-        ...work,
-        stage: work.job.translate ? "translating" : "rendering",
-        segments_en: segmentsEn,
-        segments_zh: [],
-        next_index: 0,
-        updated_at: new Date().toISOString(),
-      };
-      await writeJson(jobWorkPath(jobId), work);
+      const segmentsEn = work.segments_en;
       await updateJobStatus(jobId, {
         status: "processing",
         stage: "transcription_done",
@@ -175,6 +190,12 @@ module.exports = async function handler(req, res) {
         res.status(200).json({ ok: true, status: "completed" });
         return;
       }
+    }
+
+    if (work.stage === "rendering" && !work.job.translate) {
+      await completeJob(jobId, work);
+      res.status(200).json({ ok: true, status: "completed" });
+      return;
     }
 
     const total = work.segments_en.length;
@@ -213,6 +234,13 @@ module.exports = async function handler(req, res) {
     });
     res.status(200).json({ ok: true, status: "continued", next_index: nextIndex });
   } catch (error) {
+    if (error instanceof BlobPreconditionFailedError) {
+      res.status(200).json({ ok: true, status: "worker_already_running" });
+      return;
+    }
+    if (leaseOwned) {
+      await releaseLease().catch((releaseError) => console.error("[jobs-continue] lease release failed", releaseError.message));
+    }
     const transcribing = work?.stage === "transcribing";
     console.error("[jobs-continue] continuation failed", {
       jobId,

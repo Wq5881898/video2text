@@ -1,3 +1,4 @@
+param([string]$ReleaseRoot)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location $root
@@ -5,7 +6,12 @@ Set-Location $root
 $python = 'D:\projectQ\.venv\Scripts\python.exe'
 $icon = Join-Path $root 'assets\video2text.ico'
 $versionInfo = Join-Path $root 'build\version_info.txt'
-$releaseRoot = Join-Path $root 'release\video2text'
+$releaseBase = [System.IO.Path]::GetFullPath((Join-Path $root 'release'))
+if (-not $ReleaseRoot) { $ReleaseRoot = Join-Path $releaseBase 'video2text' }
+$releaseRoot = [System.IO.Path]::GetFullPath($ReleaseRoot)
+if (-not $releaseRoot.StartsWith($releaseBase + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+  throw "Release target must be inside $releaseBase"
+}
 $workModules = Join-Path $root 'outputs\work'
 $configRoot = Join-Path $root 'config'
 $releaseAppRoot = Join-Path $releaseRoot 'video2text'
@@ -19,10 +25,11 @@ $releaseQtBin = Join-Path $releaseInternalRoot 'PyQt6\Qt6\bin'
 $pythonDir = Split-Path -Parent $python
 $env:PATH = "$pythonDir;$env:SystemRoot\System32;$env:SystemRoot"
 
-Get-Process video2text -ErrorAction SilentlyContinue |
-  Where-Object { $_.Path -and $_.Path.StartsWith($releaseRoot, [System.StringComparison]::OrdinalIgnoreCase) } |
-  Stop-Process -Force
-Start-Sleep -Milliseconds 500
+$runningRelease = @(Get-Process video2text -ErrorAction SilentlyContinue |
+  Where-Object { $_.Path -and $_.Path.StartsWith($releaseRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase) })
+if ($runningRelease.Count) {
+  throw "Close the running release before rebuilding: $releaseRoot"
+}
 
 if (Test-Path $releaseRoot) { Remove-Item -LiteralPath $releaseRoot -Recurse -Force }
 
@@ -33,8 +40,11 @@ if (Test-Path $releaseRoot) { Remove-Item -LiteralPath $releaseRoot -Recurse -Fo
   --name video2text `
   --icon $icon `
   --version-file $versionInfo `
+  --paths $root `
   --paths $workModules `
-  --hidden-import deepl_translate `
+  --hidden-import packages.shared_core.audio_chunks `
+  --hidden-import llm_translate `
+  --hidden-import minimax_translate `
   --hidden-import gladia `
   --hidden-import run_zh_pipeline `
   --distpath $releaseRoot `
@@ -45,12 +55,16 @@ if (Test-Path $releaseRoot) { Remove-Item -LiteralPath $releaseRoot -Recurse -Fo
   --add-data "D:\program\ffmpeg\bin\ffprobe.exe;bin" `
   apps\desktop\main.py
 
+if ($LASTEXITCODE -ne 0) {
+  throw "PyInstaller failed (exit code $LASTEXITCODE). No release is ready."
+}
+
 New-Item -ItemType Directory -Force -Path $releaseWorkRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $releaseConfigRoot | Out-Null
 Get-ChildItem -LiteralPath $workModules -File -Filter '*.py' | ForEach-Object {
   Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $releaseWorkRoot $_.Name) -Force
 }
-foreach ($name in @('gladia_keys.txt', 'deepl_key.txt', 'gladia_keys.example.txt', 'deepl_key.example.txt')) {
+foreach ($name in @('gladia_keys.txt', 'minimax.json', 'glm.json', 'qwen.json', 'gladia_keys.example.txt', 'minimax.example.json')) {
   $source = Join-Path $configRoot $name
   if (Test-Path -LiteralPath $source) {
     Copy-Item -LiteralPath $source -Destination (Join-Path $releaseConfigRoot $name) -Force
@@ -77,5 +91,5 @@ if (Test-Path -LiteralPath (Join-Path $releaseInternalRoot 'icuuc.dll')) {
   throw 'Incompatible non-system ICU DLL remains in the release.'
 }
 
-Write-Host "Desktop release ready at: $releaseRoot"
-& (Join-Path $PSScriptRoot 'smoke_test_release.ps1')
+& (Join-Path $PSScriptRoot 'smoke_test_release.ps1') -ExePath (Join-Path $releaseAppRoot 'video2text.exe')
+Write-Host "Desktop release verified at: $releaseAppRoot"

@@ -29,6 +29,10 @@ class WebDevHandler(SimpleHTTPRequestHandler):
         if not route:
             self._json_response(404, {"ok": False, "error": "Missing API route"})
             return
+        if route == "media-info" and self.command == "POST":
+            # This Python-only helper retains sync URL processing; Node jobs use Vercel.
+            self._json_response(200, {"ok": True, "splitting_supported": False, "split_required": False})
+            return
         module_name = f"api.{route.replace('/', '.')}"
         try:
             module = importlib.import_module(module_name)

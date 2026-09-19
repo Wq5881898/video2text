@@ -23,11 +23,15 @@ VIDEO_EXTS = _CORE.VIDEO_EXTS
 GLADIA_BASE = "https://api.gladia.io/v2"
 GLADIA_UPLOAD_URL = f"{GLADIA_BASE}/upload"
 GLADIA_TRANSCRIBE_URL = f"{GLADIA_BASE}/pre-recorded"
-DEEPL_URL = "https://api-free.deepl.com/v2/translate"
+MINIMAX_BASE_URL = "https://api.minimaxi.com/v1"
 POLL_INTERVAL_SECONDS = 5
 POLL_MAX_ITERS = 11
-DEEPL_BATCH_SIZE = 40
-DEEPL_MAX_CHARS = 45000
+TRANSLATION_BATCH_SIZE = 40
+TRANSLATION_MAX_CHARS = 12000
+
+
+class LongAudioRequiresBackground(RuntimeError):
+    """The synchronous entry must hand an oversize recording to a durable job."""
 
 
 def load_gladia_key() -> str:
@@ -37,10 +41,10 @@ def load_gladia_key() -> str:
     return key
 
 
-def load_deepl_key() -> str:
-    key = os.environ.get("DEEPL_KEY", "").strip()
+def load_minimax_key() -> str:
+    key = os.environ.get("MINIMAX_API_KEY", "").strip()
     if not key:
-        raise RuntimeError("DEEPL_KEY is not configured on the web runtime")
+        raise RuntimeError("MINIMAX_API_KEY is not configured on the web runtime")
     return key
 
 
@@ -77,7 +81,10 @@ def upload_media_bytes(filename: str, content: bytes, content_type: str | None =
         with urllib.request.urlopen(request, timeout=180) as response:
             payload = _read_json_response(response)
     except urllib.error.HTTPError as exc:
-        raise RuntimeError(f"Gladia upload failed: {_http_error_message(exc)}") from exc
+        detail = _http_error_message(exc)
+        if exc.code == 400 and "Audio duration is greater than the maximum allowed duration" in detail:
+            raise LongAudioRequiresBackground(detail) from exc
+        raise RuntimeError(f"Gladia upload failed: {detail}") from exc
     audio_url = payload.get("audio_url")
     if not audio_url:
         raise RuntimeError(f"Gladia upload returned no audio_url: {payload}")
@@ -173,29 +180,68 @@ def extract_segments(result: dict) -> list[dict[str, object]]:
     return segments
 
 
-def _deepl_translate_batch(texts: list[str]) -> list[str]:
+def _request_minimax_batch(texts: list[str]) -> list[str]:
     if not texts:
         return []
-    from urllib.parse import quote
-
-    form_parts = [f"text={quote(text, safe='')}" for text in texts]
-    form_parts.append("source_lang=EN")
-    form_parts.append("target_lang=ZH")
-    body = "&".join(form_parts).encode("utf-8")
+    segments = [{"id": index, "text": value} for index, value in enumerate(texts)]
+    body = json.dumps({
+        "model": os.environ.get("MINIMAX_MODEL", "MiniMax-M3"),
+        "temperature": 0,
+        "max_tokens": 4000,
+        "reasoning_split": True,
+        "thinking": {"type": "disabled"},
+        "messages": [
+            {"role": "system", "content": "Translate each English subtitle into natural Simplified Chinese. Preserve meaning, names, numbers, tone and every id. Never merge, split or omit segments. Return only JSON shaped as {\"translations\":[{\"id\":0,\"text\":\"中文\"}]} ."},
+            {"role": "user", "content": json.dumps({"segments": segments}, ensure_ascii=False)},
+        ],
+    }, ensure_ascii=False).encode("utf-8")
     headers = {
-        "Authorization": f"DeepL-Auth-Key {load_deepl_key()}",
-        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": f"Bearer {load_minimax_key()}",
+        "Content-Type": "application/json",
     }
-    request = urllib.request.Request(DEEPL_URL, data=body, method="POST", headers=headers)
+    base_url = os.environ.get("MINIMAX_BASE_URL", MINIMAX_BASE_URL).rstrip("/")
+    request = urllib.request.Request(f"{base_url}/chat/completions", data=body, method="POST", headers=headers)
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with urllib.request.urlopen(request, timeout=120) as response:
             payload = _read_json_response(response)
     except urllib.error.HTTPError as exc:
-        raise RuntimeError(f"DeepL translation failed: {_http_error_message(exc)}") from exc
-    translations = payload.get("translations", [])
-    if len(translations) != len(texts):
-        raise RuntimeError(f"DeepL returned {len(translations)} results for {len(texts)} inputs")
-    return [str(item.get("text", "")).strip() for item in translations]
+        raise RuntimeError(f"MiniMax translation failed: {_http_error_message(exc)}") from exc
+    choice = (payload.get("choices") or [{}])[0]
+    if choice.get("finish_reason") != "stop":
+        raise RuntimeError(f"MiniMax output incomplete: {choice.get('finish_reason')}")
+    content = str((choice.get("message") or {}).get("content") or "").strip()
+    if content.startswith("```"):
+        content = content.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    translations = json.loads(content).get("translations")
+    if not isinstance(translations, list) or [item.get("id") for item in translations] != list(range(len(texts))):
+        raise RuntimeError("MiniMax returned mismatched segment ids")
+    result = [str(item.get("text") or "").strip() for item in translations]
+    if any(not value for value in result):
+        raise RuntimeError("MiniMax returned an empty translation")
+    return result
+
+
+def _minimax_translate_batch(texts: list[str]) -> list[str]:
+    last_error: Exception | None = None
+    for attempt in range(2):
+        try:
+            return _request_minimax_batch(texts)
+        except Exception as exc:
+            last_error = exc
+            if "MINIMAX_API_KEY is not configured" in str(exc) or any(f"HTTP {status}" in str(exc) for status in (401, 402, 403, 429)):
+                raise
+            print(f"[minimax] translation batch retry size={len(texts)} attempt={attempt + 1} error={exc}")
+            if attempt == 0:
+                time.sleep(0.5)
+    if len(texts) == 1:
+        raise RuntimeError(f"MiniMax translation failed after retries: {last_error}") from last_error
+    if not isinstance(last_error, json.JSONDecodeError) and not any(
+        marker in str(last_error) for marker in ("MiniMax output incomplete", "MiniMax returned mismatched", "MiniMax returned an empty")
+    ):
+        raise last_error
+    middle = len(texts) // 2
+    print(f"[minimax] splitting failed translation batch size={len(texts)} middle={middle}")
+    return _minimax_translate_batch(texts[:middle]) + _minimax_translate_batch(texts[middle:])
 
 
 def translate_segments(segments: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -205,18 +251,20 @@ def translate_segments(segments: list[dict[str, object]]) -> list[dict[str, obje
 
     def flush_batch() -> None:
         nonlocal pending, translated_texts, pending_chars
-        translated_texts.extend(_deepl_translate_batch(pending))
+        translated_texts.extend(_minimax_translate_batch(pending))
         pending = []
         pending_chars = 0
 
     for segment in segments:
         text = str(segment.get("text", ""))
-        if pending and (len(pending) >= DEEPL_BATCH_SIZE or pending_chars + len(text) > DEEPL_MAX_CHARS):
+        if pending and (len(pending) >= TRANSLATION_BATCH_SIZE or pending_chars + len(text) > TRANSLATION_MAX_CHARS):
             flush_batch()
         pending.append(text)
         pending_chars += len(text)
     if pending:
         flush_batch()
+    if len(translated_texts) != len(segments):
+        raise RuntimeError("MiniMax translation count differs from transcript count")
 
     result: list[dict[str, object]] = []
     for segment, zh_text in zip(segments, translated_texts):

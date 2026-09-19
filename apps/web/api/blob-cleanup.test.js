@@ -5,6 +5,7 @@ const {
   deleteInBatches,
   isTemporaryMedia,
   scanExpiredMedia,
+  RETENTION_HOURS,
 } = require("./blob-cleanup");
 
 const NOW = Date.parse("2026-09-16T12:00:00Z");
@@ -31,21 +32,26 @@ test("protects job records, outputs and unrelated files", () => {
   }
 });
 
-test("expires old media across pages and preserves fresh files and results", async () => {
+test("uses a 48-hour media retention policy", () => {
+  assert.equal(RETENTION_HOURS, 48);
+});
+
+test("expires media older than 48 hours across pages and protects the boundary", async () => {
   const oldMedia = blob("uploads/seven-days-old.m4a", 168, 200);
   const legacyMedia = blob("legacy.mp3", 144, 300);
+  const justExpired = blob("uploads/just-over-48-hours.m4a", 48 + 1 / 60, 150);
   const requests = [];
   const pages = [
-    { blobs: [oldMedia, blob("uploads/recent.m4a", 48), blob("uploads/exactly-72-hours.mp4", 72)], hasMore: true, cursor: "next" },
+    { blobs: [oldMedia, blob("uploads/recent.m4a", 24), blob("uploads/exactly-48-hours.mp4", 48), justExpired], hasMore: true, cursor: "next" },
     { blobs: [legacyMedia, blob("jobs/job_123/result.json", 200), { ...blob("uploads/unknown-date.wav", 100), uploadedAt: "invalid" }], hasMore: false },
   ];
   const scan = await scanExpiredMedia(NOW, async (options) => {
     requests.push(options);
     return pages.shift();
   });
-  assert.deepEqual(scan.expired, [oldMedia.url, legacyMedia.url]);
-  assert.equal(scan.scanned, 6);
-  assert.equal(scan.expiredBytes, 500);
+  assert.deepEqual(scan.expired, [oldMedia.url, justExpired.url, legacyMedia.url]);
+  assert.equal(scan.scanned, 7);
+  assert.equal(scan.expiredBytes, 650);
   assert.equal(requests[1].cursor, "next");
 });
 
@@ -90,6 +96,7 @@ test("handler requires authorization and dry-run never deletes", async () => {
     assert.equal(preview.payload.eligible, 1);
     assert.equal(preview.payload.eligible_bytes, 250);
     assert.equal(preview.payload.deleted, 0);
+    assert.equal(preview.payload.retention_hours, 48);
     assert.equal(deleteCalls, 0);
 
     const cleanup = response();
@@ -97,6 +104,7 @@ test("handler requires authorization and dry-run never deletes", async () => {
     assert.equal(cleanup.code, 200);
     assert.equal(cleanup.payload.deleted, 1);
     assert.equal(cleanup.payload.deleted_bytes, 250);
+    assert.equal(cleanup.payload.retention_hours, 48);
     assert.equal(deleteCalls, 1);
   } finally {
     if (previousSecret === undefined) delete process.env.CRON_SECRET;

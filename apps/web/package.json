@@ -10,6 +10,8 @@
     "test:cloud": "node cloud_e2e_test.js"
   },
   "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "1.1.0",
+    "@ffprobe-installer/ffprobe": "2.1.2",
     "@vercel/blob": "^2.6.1",
     "@vercel/functions": "^3.7.6"
   },

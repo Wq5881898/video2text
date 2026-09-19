@@ -1,5 +1,7 @@
 const crypto = require("node:crypto");
+const fs = require("node:fs/promises");
 const { put, get } = require("@vercel/blob");
+const { appendChunkSegments, buildMediaPlan, isAppMediaUrl, probeMedia, withMediaChunk } = require("./media-chunks");
 
 const GLADIA_BASE = "https://api.gladia.io/v2";
 const GLADIA_UPLOAD_URL = `${GLADIA_BASE}/upload`;
@@ -79,29 +81,34 @@ async function triggerJobContinuation(jobId, nextIndex) {
   throw lastError;
 }
 
-async function writeJson(pathname, data) {
+async function writeJson(pathname, data, options = {}) {
   return put(pathname, JSON.stringify(data, null, 2), {
     access: "public",
     addRandomSuffix: false,
     allowOverwrite: true,
     contentType: "application/json; charset=utf-8",
     cacheControlMaxAge: 60,
+    ...options,
   });
 }
 
-async function readJson(pathname) {
+async function readJson(pathname, { withMetadata = false } = {}) {
   let lastError;
   for (let attempt = 1; attempt <= BLOB_READ_ATTEMPTS; attempt += 1) {
     try {
       const response = await get(pathname, {
         access: "public",
-        headers: { "cache-control": "no-cache" },
+        // Compression changes a public Blob's strong ETag into a weak ETag,
+        // which cannot satisfy the checkpoint's conditional write.
+        headers: { "cache-control": "no-cache", "accept-encoding": "identity" },
+        useCache: false,
       });
       if (!response || response.statusCode !== 200 || !response.stream) {
         return null;
       }
       const text = await new Response(response.stream).text();
-      return JSON.parse(text);
+      const value = JSON.parse(text);
+      return withMetadata ? { value, etag: response.blob.etag } : value;
     } catch (error) {
       lastError = error;
       if (attempt < BLOB_READ_ATTEMPTS) {
@@ -117,7 +124,7 @@ function sleep(ms) {
 }
 
 async function downloadMedia(sourceUrl) {
-  const response = await fetch(sourceUrl);
+  const response = await fetch(sourceUrl, { signal: AbortSignal.timeout(90000) });
   if (!response.ok) {
     throw new Error(`Media download failed: HTTP ${response.status}`);
   }
@@ -138,6 +145,7 @@ async function uploadToGladia(filename, bytes, contentType) {
       "x-gladia-key": ensureEnv("GLADIA_API_KEY"),
     },
     body: form,
+    signal: AbortSignal.timeout(90000),
   });
   if (!response.ok) {
     throw new Error(
@@ -175,6 +183,7 @@ async function submitTranscription(audioUrl) {
       chapterization: false,
       sentiment_analysis: false,
     }),
+    signal: AbortSignal.timeout(30000),
   });
   if (!response.ok) {
     throw new Error(
@@ -200,18 +209,29 @@ async function pollTranscriptionWindow(jobId, options = {}) {
       : POLL_INTERVAL_MS,
   );
   let lastStatus = "pending";
+  const deadline = Date.now() + Math.max(1, Number(options.maxWindowMs) || 60000);
   for (let index = 0; index < maxIterations; index += 1) {
-    const response = await fetch(`${GLADIA_TRANSCRIBE_URL}/${jobId}`, {
-      headers: {
-        "x-gladia-key": ensureEnv("GLADIA_API_KEY"),
-      },
-    });
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    let response;
+    let payload;
+    try {
+      response = await fetch(`${GLADIA_TRANSCRIBE_URL}/${jobId}`, {
+        headers: {
+          "x-gladia-key": ensureEnv("GLADIA_API_KEY"),
+        },
+        signal: AbortSignal.timeout(Math.min(30000, remaining)),
+      });
+      if (response.ok) payload = await response.json();
+    } catch (error) {
+      if (error.name === "TimeoutError" || error.name === "AbortError") break;
+      throw error;
+    }
     if (!response.ok) {
       throw new Error(
         `Gladia polling failed: HTTP ${response.status} ${await response.text()}`,
       );
     }
-    const payload = await response.json();
     lastStatus = String(payload.status || "pending");
     if (payload.status === "done") {
       return { done: true, result: payload.result || {}, status: "done" };
@@ -220,7 +240,7 @@ async function pollTranscriptionWindow(jobId, options = {}) {
       throw new Error(`Gladia job failed: ${JSON.stringify(payload)}`);
     }
     if (index + 1 < maxIterations) {
-      await sleep(pollIntervalMs);
+      await sleep(Math.min(pollIntervalMs, Math.max(0, deadline - Date.now())));
     }
   }
   return { done: false, result: null, status: lastStatus };
@@ -230,6 +250,96 @@ async function waitForTranscription(jobId) {
   const poll = await pollTranscriptionWindow(jobId);
   if (poll.done) return poll.result;
   throw new Error("Transcription polling timed out");
+}
+
+function continuationCursor(work) {
+  if (work.stage === "transcribing" && work.cursor_version === 2) {
+    return (Number(work.transcription_part_index) || 0) + 1;
+  }
+  return Math.max(0, Number(work.next_index) || 0);
+}
+
+async function transcribeWorkWindow(work, options = {}) {
+  const checkpoint = options.onCheckpoint || (async () => {});
+  const onStage = options.onStage || (async () => {});
+  const services = {
+    probeMedia, buildMediaPlan, withMediaChunk, downloadMedia,
+    uploadToGladia, submitTranscription, pollTranscriptionWindow,
+    readFile: fs.readFile,
+    ...options.services,
+  };
+  let updated = { ...work };
+  const save = async () => {
+    updated.updated_at = new Date().toISOString();
+    await checkpoint(updated);
+  };
+  if (!updated.media_plan) {
+    if (updated.gladia_job_id || !isAppMediaUrl(updated.job.source_url)) {
+      // Keep legacy paid requests and external-URL processing on the original path.
+      updated.media_plan = { split: false, parts: [{ index: 0, offset_seconds: 0 }] };
+    } else {
+      await onStage("prepare_audio", "Inspecting audio duration before transcription.");
+      updated.media_plan = services.buildMediaPlan(await services.probeMedia(updated.job.source_url));
+    }
+    updated.transcription_part_index = 0;
+    await save();
+    return {
+      done: false, work: updated, prepared: true,
+      progress: { completed: 0, total: updated.media_plan.parts.length },
+    };
+  }
+  const plan = updated.media_plan;
+  const index = Number(updated.transcription_part_index) || 0;
+  const part = plan.parts[index];
+  if (!part) throw new Error("Audio chunk index in the saved checkpoint is invalid");
+  const progress = { completed: index, total: plan.parts.length };
+  if (!updated.gladia_job_id) {
+    const submit = async (filename, bytes, contentType) => {
+      await onStage("upload_to_gladia", `Uploading audio part ${index + 1} of ${plan.parts.length}.`, { progress });
+      const audioUrl = await services.uploadToGladia(filename, bytes, contentType);
+      await onStage("submit_transcription", `Submitting audio part ${index + 1} of ${plan.parts.length}.`, { progress });
+      return services.submitTranscription(audioUrl);
+    };
+    if (plan.split) {
+      await onStage("prepare_audio", `Preparing audio part ${index + 1} of ${plan.parts.length}.`, { progress });
+      updated.gladia_job_id = await services.withMediaChunk(updated.job.source_url, plan, index, async (chunk) =>
+        submit(chunk.filename, await services.readFile(chunk.path), chunk.content_type));
+    } else {
+      const downloaded = await services.downloadMedia(updated.job.source_url);
+      updated.gladia_job_id = await submit(updated.job.file_name, downloaded.bytes, downloaded.contentType);
+    }
+    await save();
+    return { done: false, work: updated, progress, submitted: true };
+  }
+  await onStage("poll_transcription", `Transcribing audio part ${index + 1} of ${plan.parts.length}.`, {
+    progress, gladia_job_id: updated.gladia_job_id,
+  });
+  const result = await services.pollTranscriptionWindow(updated.gladia_job_id, {
+    maxIterations: options.maxIterations || 10,
+    ...(options.pollIntervalMs === undefined ? {} : { pollIntervalMs: options.pollIntervalMs }),
+  });
+  if (!result.done) return { done: false, work: updated, progress };
+  const segments = extractSegments(result.result);
+  // Silence in one chunk is valid; fail only if the entire recording has no transcript.
+  updated.segments_en = appendChunkSegments(updated.segments_en || [], segments, part, plan.split);
+  updated.transcription_part_index = index + 1;
+  updated.transcription_jobs = [
+    ...(updated.transcription_jobs || []),
+    { index, job_id: updated.gladia_job_id, segment_count: segments.length },
+  ];
+  updated.gladia_job_id = null;
+  const done = updated.transcription_part_index >= plan.parts.length;
+  if (done) {
+    if (!updated.segments_en.length) throw new Error("No transcript segments were returned");
+    updated.stage = updated.job.translate ? "translating" : "rendering";
+    updated.next_index = 0;
+    updated.segments_zh = [];
+  }
+  await save();
+  return {
+    done, work: updated,
+    progress: { completed: updated.transcription_part_index, total: plan.parts.length },
+  };
 }
 
 function extractSegments(result) {
@@ -506,6 +616,7 @@ async function updateJobStatus(jobId, data) {
 }
 
 module.exports = {
+  continuationCursor,
   jobResultPath,
   jobStatusPath,
   jobWorkPath,
@@ -518,6 +629,7 @@ module.exports = {
   renderJobResult,
   submitJob,
   triggerJobContinuation,
+  transcribeWorkWindow,
   translateWorkBatch,
   translateSegments,
   updateJobStatus,

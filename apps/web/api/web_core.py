@@ -20,7 +20,7 @@ def classify_media(path: Path) -> str:
 
 def build_cloud_capabilities() -> dict[str, object]:
     has_gladia = bool(os.environ.get("GLADIA_API_KEY", "").strip())
-    has_deepl = bool(os.environ.get("DEEPL_KEY", "").strip())
+    has_minimax = bool(os.environ.get("MINIMAX_API_KEY", "").strip())
     has_blob = bool(os.environ.get("BLOB_READ_WRITE_TOKEN", "").strip())
     return {
         "supported_exts": sorted(SUPPORTED_EXTS),
@@ -28,7 +28,7 @@ def build_cloud_capabilities() -> dict[str, object]:
         "video_exts": sorted(VIDEO_EXTS),
         "output_formats": sorted(OUTPUT_FORMATS),
         "translation": {
-            "enabled": has_deepl,
+            "enabled": has_minimax,
             "target_language": "zh",
         },
         "execution": {
@@ -43,6 +43,6 @@ def build_cloud_capabilities() -> dict[str, object]:
         "environment": {
             "blob_configured": has_blob,
             "gladia_configured": has_gladia,
-            "deepl_configured": has_deepl,
+            "minimax_configured": has_minimax,
         },
     }

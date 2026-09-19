@@ -8,12 +8,32 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from .key_management import CONFIG_ROOT, DEEPL_KEY_PATH, GLADIA_KEYS_PATH, application_root
+from .audio_chunks import (
+    MAX_AUDIO_SECONDS,
+    chunk_extension,
+    merge_part_transcripts,
+    plan_audio_parts,
+    prepare_audio_part,
+    probe_audio,
+    write_json_atomic,
+)
+
+from .key_management import (
+    CONFIG_ROOT,
+    GLADIA_KEYS_PATH,
+    application_root,
+    normalize_translation_provider,
+    read_translation_config,
+    read_translation_key,
+    translation_config_path,
+    translation_provider_label,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -24,12 +44,14 @@ def runtime_root() -> Path:
 
 
 RUNTIME_ROOT = runtime_root()
-RESOURCE_WORK_ROOT = RUNTIME_ROOT / "outputs" / "work"
+RESOURCE_WORK_ROOT = (
+    application_root() if getattr(sys, "frozen", False) else RUNTIME_ROOT
+) / "outputs" / "work"
 if str(RESOURCE_WORK_ROOT) not in sys.path:
     sys.path.insert(0, str(RESOURCE_WORK_ROOT))
 
-import deepl_translate
 import gladia as g
+import llm_translate
 import run_zh_pipeline as rzp
 
 
@@ -51,10 +73,12 @@ class PipelineConfig:
     output_format: str
     translate: bool
     source_language: str = "auto"
+    translation_provider: str = "minimax"
     output_dir: Path | None = None
     jobs_root: Path = DEFAULT_JOBS_ROOT
     poll_interval: int = 8
     poll_max_iters: int = 90
+    max_audio_seconds: float = MAX_AUDIO_SECONDS
 
 
 @dataclass(slots=True)
@@ -75,6 +99,10 @@ class EnvironmentCheck:
     detail: str
 
 
+class GladiaJobFailedError(RuntimeError):
+    """A terminal remote failure, unlike a retryable polling timeout."""
+
+
 def default_log(message: str) -> None:
     print(message, flush=True)
 
@@ -87,7 +115,12 @@ def _has_nonempty_file(path: Path) -> bool:
     return path.exists() and bool(path.read_text(encoding="utf-8").strip())
 
 
-def collect_environment_checks(*, needs_translation: bool, needs_video_tools: bool) -> list[EnvironmentCheck]:
+def collect_environment_checks(
+    *,
+    needs_translation: bool,
+    needs_video_tools: bool,
+    translation_provider: str = "minimax",
+) -> list[EnvironmentCheck]:
     checks: list[EnvironmentCheck] = []
 
     try:
@@ -115,18 +148,24 @@ def collect_environment_checks(*, needs_translation: bool, needs_video_tools: bo
         )
     )
 
-    deepl_env = bool(os.environ.get("DEEPL_KEY", "").strip())
-    deepl_file = _has_nonempty_file(DEEPL_KEY_PATH)
+    provider = normalize_translation_provider(translation_provider)
+    provider_label = translation_provider_label(provider)
+    provider_key_present = bool(read_translation_key(provider))
+    provider_path = translation_config_path(provider)
+    provider_config = read_translation_config(provider)
+    provider_ready = provider_key_present and bool(
+        provider_config.get("base_url") and provider_config.get("model")
+    )
     if needs_translation:
         checks.append(
             EnvironmentCheck(
-                "deepl",
-                deepl_env or deepl_file,
-                "DEEPL_KEY env" if deepl_env else (str(DEEPL_KEY_PATH) if deepl_file else f"Missing {DEEPL_KEY_PATH}"),
+                provider,
+                provider_ready,
+                str(provider_path) if provider_ready else f"Missing or incomplete {provider_path}",
             )
         )
     else:
-        checks.append(EnvironmentCheck("deepl", True, "Not needed when translation is off"))
+        checks.append(EnvironmentCheck(provider, True, f"{provider_label} not needed when translation is off"))
 
     return checks
 
@@ -245,7 +284,7 @@ def wait_for_gladia_result(
         if status == "done":
             return payload["result"]
         if status == "error":
-            raise RuntimeError(f"Gladia job failed: {payload}")
+            raise GladiaJobFailedError(f"Gladia job failed: {payload}")
         time.sleep(poll_interval)
     raise TimeoutError(f"Gladia polling timeout for job {job_id}")
 
@@ -292,7 +331,7 @@ def write_raw_result(result: dict, job_id: str, raw_path: Path, zh_path: Path) -
         "job_id": job_id,
         "_fetch_ts": time.time(),
     }
-    raw_path.write_text(json.dumps(raw_data, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_json_atomic(raw_path, raw_data)
     zh_data = {
         "duration": result.get("metadata", {}).get("audio_duration"),
         "language": primary_language,
@@ -303,12 +342,14 @@ def write_raw_result(result: dict, job_id: str, raw_path: Path, zh_path: Path) -
         "_fetch_ts": time.time(),
         "_fetch_stage": "source-transcript",
     }
-    zh_path.write_text(json.dumps(zh_data, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_json_atomic(zh_path, zh_data)
     return segments, detected_languages
 
 
 def run_dedup(raw_path: Path, out_path: Path) -> list[dict]:
     dedup_script = RESOURCE_WORK_ROOT / "dedup.py"
+    if not dedup_script.is_file():
+        raise FileNotFoundError(f"Dedup script not found: {dedup_script}")
     old_argv = sys.argv[:]
     try:
         sys.argv = [str(dedup_script), str(raw_path), str(out_path)]
@@ -323,11 +364,11 @@ def render_txt_en(segments: list[dict], out_path: Path) -> None:
 
 
 def render_txt_bilingual(en_segments: list[dict], zh_segments: list[dict], out_path: Path) -> None:
-    paired = rzp.pair_en_zh(en_segments, zh_segments)
+    paired = align_bilingual_segments(en_segments, zh_segments)
     lines = []
-    for entry in paired:
-        zh = rzp.clean_zh(entry.get("text_zh", "").strip())
-        en = entry.get("text_en", "").strip()
+    for en_segment, zh_segment in paired:
+        zh = rzp.clean_zh(zh_segment["text"].strip())
+        en = en_segment["text"].strip()
         if zh:
             lines.append(zh)
         if en:
@@ -336,11 +377,27 @@ def render_txt_bilingual(en_segments: list[dict], zh_segments: list[dict], out_p
     out_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
 
 
+def align_bilingual_segments(en_segments: list[dict], zh_segments: list[dict]) -> list[tuple[dict, dict]]:
+    if len(en_segments) != len(zh_segments):
+        raise ValueError(f"Bilingual segment count mismatch: en={len(en_segments)} zh={len(zh_segments)}")
+    paired = []
+    for index, (en, zh) in enumerate(zip(en_segments, zh_segments), 1):
+        if (en.get("start"), en.get("end")) != (zh.get("start"), zh.get("end")):
+            raise ValueError(f"Bilingual timestamps differ at segment {index}")
+        if zh.get("source_text") is not None and zh["source_text"] != en.get("text"):
+            raise ValueError(f"Bilingual source text differs at segment {index}")
+        if not str(zh.get("text") or "").strip():
+            raise ValueError(f"Empty Chinese translation at segment {index}")
+        paired.append((en, zh))
+    return paired
+
+
 def fmt_srt_timestamp(value: float) -> str:
-    h = int(value // 3600)
-    m = int((value % 3600) // 60)
-    s = value % 60
-    return f"{h:02d}:{m:02d}:{s:06.3f}"
+    milliseconds = max(0, round(value * 1000))
+    hours, milliseconds = divmod(milliseconds, 3600000)
+    minutes, milliseconds = divmod(milliseconds, 60000)
+    seconds, milliseconds = divmod(milliseconds, 1000)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
 
 
 def render_srt_en(segments: list[dict], out_path: Path) -> None:
@@ -354,13 +411,13 @@ def render_srt_en(segments: list[dict], out_path: Path) -> None:
 
 
 def render_srt_bilingual(en_segments: list[dict], zh_segments: list[dict], out_path: Path) -> None:
-    paired = rzp.pair_en_zh(en_segments, zh_segments)
+    paired = align_bilingual_segments(en_segments, zh_segments)
     lines = []
-    for idx, entry in enumerate(paired, 1):
-        zh = rzp.clean_zh(entry.get("text_zh", "").strip())
-        en = entry.get("text_en", "").strip()
+    for idx, (en_segment, zh_segment) in enumerate(paired, 1):
+        zh = rzp.clean_zh(zh_segment["text"].strip())
+        en = en_segment["text"].strip()
         lines.append(str(idx))
-        lines.append(f"{fmt_srt_timestamp(entry['start'])} --> {fmt_srt_timestamp(entry['end'])}")
+        lines.append(f"{fmt_srt_timestamp(en_segment['start'])} --> {fmt_srt_timestamp(en_segment['end'])}")
         if zh:
             lines.append(zh)
         if en:
@@ -374,12 +431,37 @@ def prepare_input_media(src: Path, job_dir: Path, log: LogFn = default_log) -> t
     if media_type == "audio":
         return media_type, src
     out_audio = job_dir / f"{src.stem}.m4a"
-    has_submitted_job = (job_dir / "gladia_raw.job_id").exists()
-    if not out_audio.exists() or not has_submitted_job:
+    if (job_dir / "gladia_raw.json").is_file():
+        log(f"[extract] reuse completed transcript instead of extracting {src.name} again")
+        return media_type, out_audio
+    if not out_audio.exists():
         extract_audio_for_video(src, out_audio, log=log)
     else:
         log(f"[extract] reuse existing audio: {out_audio}")
     return media_type, out_audio
+
+
+def cleanup_intermediate_audio(
+    media_type: str,
+    media_path: Path,
+    job_dir: Path,
+    log: LogFn = default_log,
+) -> None:
+    """Remove only video-derived audio after the final output is complete."""
+    if media_type != "video":
+        return
+
+    try:
+        resolved_media = media_path.resolve()
+        resolved_job_dir = job_dir.resolve()
+        if resolved_media.parent != resolved_job_dir:
+            log(f"[cleanup] skipped unsafe intermediate path: {media_path}")
+            return
+        resolved_media.unlink(missing_ok=True)
+        log(f"[cleanup] removed intermediate audio: {media_path.name}")
+    except OSError as exc:
+        # Cleanup failure must not invalidate a successfully generated transcript.
+        log(f"[cleanup] warning: could not remove intermediate audio {media_path}: {exc}")
 
 
 def choose_output_path(src: Path, output_dir: Path | None, fmt: str) -> Path:
@@ -388,74 +470,187 @@ def choose_output_path(src: Path, output_dir: Path | None, fmt: str) -> Path:
     return base_dir / f"{src.stem}.{fmt}"
 
 
+def source_signature(source: Path) -> dict:
+    stat = source.stat()
+    return {"path": str(source.resolve()), "size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
+
+
+def _key_fingerprint(key: str) -> str:
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+
+def _saved_job_id(job_dir: Path, request: dict) -> str:
+    if request.get("status") == "failed":
+        return ""
+    legacy_path = job_dir / "gladia_raw.job_id"
+    return request.get("job_id") or (legacy_path.read_text(encoding="utf-8").strip() if legacy_path.exists() else "")
+
+
+def _fetch_audio_transcript(
+    media_path: Path,
+    job_dir: Path,
+    config: PipelineConfig,
+    rotator,
+    signature: dict,
+    report: Callable[[str], None],
+    log: LogFn,
+) -> dict:
+    raw_path = job_dir / "gladia_raw.json"
+    if raw_path.is_file():
+        report("Reusing completed transcript")
+        return json.loads(raw_path.read_text(encoding="utf-8"))
+    request_path = job_dir / "gladia_request.json"
+    job_id_path = job_dir / "gladia_raw.job_id"
+    request = json.loads(request_path.read_text(encoding="utf-8")) if request_path.exists() else {}
+    job_id = _saved_job_id(job_dir, request)
+    if not job_id:
+        languages, code_switching = language_config_for_mode(config.source_language)
+        while True:
+            try:
+                report("Uploading audio")
+                audio_url = g.upload(rotator, src=media_path)
+                report("Submitting transcription")
+                job_id = g.transcribe(rotator, audio_url, languages=languages, code_switching=code_switching)
+                break
+            except g.AudioUrlKeyMismatch as exc:
+                failed_index = rotator.idx
+                rotator.mark_bad(failed_index, reason=str(exc))
+                try:
+                    rotator.rotate(reason=str(exc))
+                except g.KeyRotatorExhausted:
+                    raise RuntimeError("all Gladia keys were rejected by the remote API") from exc
+                log(f"[stt] remote rejected key#{failed_index + 1}; retrying with key#{rotator.idx + 1}")
+        request = {"job_id": job_id, "key_fingerprint": _key_fingerprint(rotator.current), "source": signature}
+        write_json_atomic(request_path, request)
+        job_id_path.write_text(job_id, encoding="utf-8")
+    else:
+        log(f"[stt] resume saved transcription job_id={job_id}")
+    fingerprint = request.get("key_fingerprint")
+    if fingerprint:
+        candidates = [key for key in rotator.keys if _key_fingerprint(key) == fingerprint]
+        if not candidates:
+            raise RuntimeError("Restore the original Gladia key to resume this saved transcription job")
+    else:
+        # Old jobs did not record their submitting key. Only retry authorization errors.
+        candidates = list(dict.fromkeys([rotator.current, *rotator.keys]))
+    report("Waiting for transcription result")
+    for key in candidates:
+        try:
+            result = wait_for_gladia_result(key, job_id, poll_interval=config.poll_interval, max_iters=config.poll_max_iters)
+            break
+        except urllib.error.HTTPError as exc:
+            if exc.code not in {401, 403}:
+                raise
+        except GladiaJobFailedError as exc:
+            write_json_atomic(request_path, {**request, "job_id": job_id, "source": signature,
+                                            "status": "failed", "error": str(exc)})
+            raise
+    else:
+        raise RuntimeError("No configured Gladia key can read this saved transcription job; restore its original key")
+    if not fingerprint:
+        write_json_atomic(request_path, {"job_id": job_id, "key_fingerprint": _key_fingerprint(key), "source": signature})
+    write_raw_result(result, job_id, raw_path, job_dir / "gladia_zh.json")
+    return json.loads(raw_path.read_text(encoding="utf-8"))
+
+
+def _transcribe_long_audio(
+    media_path: Path, job_dir: Path, metadata: dict, config: PipelineConfig, rotator,
+    signature: dict, report: Callable[[str], None], log: LogFn,
+) -> dict:
+    plan_path = job_dir / "audio_parts.json"
+    if plan_path.exists():
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        if plan.get("source") != signature or plan.get("max_seconds") != config.max_audio_seconds:
+            raise RuntimeError("The recording or chunk limit changed; remove this job's cache before processing it again")
+    else:
+        plan = {**metadata, "parts": plan_audio_parts(metadata["duration_seconds"], config.max_audio_seconds),
+                "source": signature, "max_seconds": config.max_audio_seconds}
+        write_json_atomic(plan_path, plan)
+    ffmpeg = find_binary("ffmpeg", FFMPEG_FALLBACK)
+    ffprobe = find_binary("ffprobe", FFPROBE_FALLBACK)
+    log(f"[split] {plan['duration_seconds']:.3f}s -> {len(plan['parts'])} parts; serial transcription")
+    transcripts = []
+    for part in plan["parts"]:
+        label = f"Part {part['index'] + 1}/{len(plan['parts'])}"
+        part_dir = job_dir / "audio_parts" / f"part_{part['index'] + 1:04d}"
+        part_dir.mkdir(parents=True, exist_ok=True)
+        audio_path = part_dir / f"{media_path.stem}.part-{part['index'] + 1:04d}{chunk_extension(plan['codec'])}"
+        request_path = part_dir / "gladia_request.json"
+        request = json.loads(request_path.read_text(encoding="utf-8")) if request_path.exists() else {}
+        has_checkpoint = (part_dir / "gladia_raw.json").exists() or bool(_saved_job_id(part_dir, request))
+        if not has_checkpoint:
+            report(f"{label}: preparing {part['duration_seconds']:.3f}s audio")
+            audio_path = prepare_audio_part(media_path, audio_path, part, plan["codec"], ffmpeg, ffprobe)
+        transcript = _fetch_audio_transcript(
+            audio_path, part_dir, config, rotator, signature,
+            lambda detail, label=label: report(f"{label}: {detail}"), log,
+        )
+        transcripts.append(transcript)
+        report(f"{label}: transcript saved")
+    raw = merge_part_transcripts(plan["parts"], transcripts, plan["duration_seconds"])
+    raw["_fetch_ts"] = time.time()
+    write_json_atomic(job_dir / "gladia_raw.json", raw)
+    (job_dir / "gladia_raw.job_id").write_text("chunked", encoding="utf-8")
+    report(f"Merged {len(plan['parts'])} audio parts into one transcript")
+    return raw
+
+
+def cleanup_audio_parts(job_dir: Path, log: LogFn = default_log) -> None:
+    parts_root = job_dir / "audio_parts"
+    if not parts_root.is_dir():
+        return
+    for audio in parts_root.rglob("*"):
+        if audio.is_file() and audio.suffix.lower() in AUDIO_EXTS:
+            try:
+                if audio.resolve().is_relative_to(job_dir.resolve()):
+                    audio.unlink()
+                    log(f"[cleanup] removed audio chunk: {audio.name}")
+            except OSError as exc:
+                log(f"[cleanup] warning: could not remove audio chunk {audio.name}: {exc}")
+
+
 def ensure_transcript_artifacts(
     media_path: Path,
     job_dir: Path,
     config: PipelineConfig,
     log: LogFn = default_log,
     stage_callback: StageFn = default_stage_callback,
+    *,
+    source_path: Path | None = None,
 ) -> tuple[list[dict], Path, Path, list[str], bool]:
     keys = g.load_keys()
     rotator = g.KeyRotator(keys)
-    idx = g.find_working_key(rotator, force=True)
-    if idx is None:
-        raise RuntimeError("no working Gladia key available")
-    rotator.use(idx)
 
-    job_id_path = job_dir / "gladia_raw.job_id"
     raw_path = job_dir / "gladia_raw.json"
     clean_path = job_dir / "utt_clean.json"
     zh_path = job_dir / "gladia_zh.json"
 
-    if job_id_path.exists() and raw_path.exists():
-        job_id = job_id_path.read_text(encoding="utf-8").strip()
-        log(f"[stt] reuse existing job_id={job_id}")
-        stage_callback(media_path, "stt", "Reusing transcript job")
+    original = source_path or media_path
+    signature = source_signature(original)
+    source_path_record = job_dir / "transcription_source.json"
+    if source_path_record.exists() and json.loads(source_path_record.read_text(encoding="utf-8")) != signature:
+        raise RuntimeError("The source recording changed; remove this job's cache before processing it again")
+    write_json_atomic(source_path_record, signature)
+
+    def report(detail: str) -> None:
+        log(f"[stt] {detail}")
+        stage_callback(original, "stt", detail)
+
+    if raw_path.exists():
+        report("Reusing completed transcript")
+        raw_data = json.loads(raw_path.read_text(encoding="utf-8"))
     else:
-        log(f"[stt] upload/transcribe: {media_path.name}")
-        languages, code_switching = language_config_for_mode(config.source_language)
-        while True:
-            try:
-                stage_callback(media_path, "stt", "Uploading audio")
-                audio_url = g.upload(rotator, src=media_path)
-                stage_callback(media_path, "stt", "Submitting transcription")
-                job_id = g.transcribe(
-                    rotator,
-                    audio_url,
-                    languages=languages,
-                    code_switching=code_switching,
-                )
-                break
-            except g.AudioUrlKeyMismatch as exc:
-                failed_index = rotator.idx
-                rotator.mark_bad(failed_index, reason=str(exc))
-                next_index = g.find_working_key(rotator, force=True)
-                if next_index is None:
-                    raise RuntimeError("all Gladia keys were rejected by the remote API") from exc
-                rotator.use(next_index)
-                log(f"[stt] remote rejected key#{failed_index + 1}; retrying with key#{next_index + 1}")
-        job_id_path.write_text(job_id, encoding="utf-8")
-        stage_callback(media_path, "stt", "Waiting for transcription result")
-        result = wait_for_gladia_result(
-            rotator.current,
-            job_id,
-            poll_interval=config.poll_interval,
-            max_iters=config.poll_max_iters,
-        )
-        write_raw_result(result, job_id, raw_path, zh_path)
-
-    if not raw_path.exists():
-        log("[stt] raw result missing, refetching")
-        stage_callback(media_path, "stt", "Refetching transcript result")
-        result = wait_for_gladia_result(
-            rotator.current,
-            job_id,
-            poll_interval=config.poll_interval,
-            max_iters=config.poll_max_iters,
-        )
-        write_raw_result(result, job_id, raw_path, zh_path)
-
-    raw_data = json.loads(raw_path.read_text(encoding="utf-8"))
+        metadata = probe_audio(find_binary("ffprobe", FFPROBE_FALLBACK), media_path)
+        plan_audio_parts(metadata["duration_seconds"], config.max_audio_seconds)
+        if metadata["duration_seconds"] > config.max_audio_seconds:
+            raw_data = _transcribe_long_audio(media_path, job_dir, metadata, config, rotator, signature, report, log)
+        else:
+            raw_data = _fetch_audio_transcript(media_path, job_dir, config, rotator, signature, report, log)
+    if not zh_path.exists():
+        write_json_atomic(zh_path, {
+            **{key: value for key, value in raw_data.items() if key != "segments"},
+            "segments_en": raw_data["segments"], "segments_zh": [], "_fetch_stage": "source-transcript",
+        })
     detected_languages = raw_data.get("languages", [])
     if not detected_languages and raw_data.get("language") not in {None, "unknown"}:
         detected_languages = [raw_data["language"]]
@@ -467,11 +662,11 @@ def ensure_transcript_artifacts(
 
     if english_only:
         log("[dedup] running English transcript cleanup")
-        stage_callback(media_path, "dedup", "Cleaning English transcript segments")
+        stage_callback(original, "dedup", "Cleaning English transcript segments")
         clean_segments = run_dedup(raw_path, clean_path)
     else:
         log("[dedup] preserving source-language transcript")
-        stage_callback(media_path, "dedup", "Preserving source-language segments")
+        stage_callback(original, "dedup", "Preserving source-language segments")
         clean_segments = raw_data.get("segments", [])
         clean_path.write_text(
             json.dumps(clean_segments, ensure_ascii=False, indent=2),
@@ -492,9 +687,13 @@ def render_output(
     out_path = choose_output_path(source_path, config.output_dir, config.output_format)
     translated = config.translate and can_translate_to_chinese
     if translated:
-        log("[translate] running DeepL translation")
-        stage_callback(source_path, "translate", "Translating to Chinese")
-        deepl_translate.main([str(zh_path.parent / "utt_clean.json"), str(zh_path)])
+        provider = normalize_translation_provider(config.translation_provider)
+        provider_label = translation_provider_label(provider)
+        log(f"[translate] running {provider_label} streaming translation")
+        stage_callback(source_path, "translate", f"Translating to Chinese with {provider_label}")
+        llm_translate.main(
+            [str(zh_path.parent / "utt_clean.json"), str(zh_path), provider]
+        )
         data = json.loads(zh_path.read_text(encoding="utf-8"))
         zh_segments = data.get("segments_zh", [])
         stage_callback(source_path, "render", f"Writing {config.output_format} output")
@@ -532,6 +731,7 @@ def process_one(
         config,
         log=log,
         stage_callback=stage_callback,
+        source_path=source_path,
     )
     if detected_languages:
         log(f"[stt] detected language(s): {', '.join(detected_languages)}")
@@ -544,6 +744,8 @@ def process_one(
         log=log,
         stage_callback=stage_callback,
     )
+    cleanup_intermediate_audio(media_type, media_path, job_dir, log=log)
+    cleanup_audio_parts(job_dir, log=log)
     stage_callback(source_path, "done", f"Created {output_path.name}")
     return PipelineResult(
         source_path=source_path,

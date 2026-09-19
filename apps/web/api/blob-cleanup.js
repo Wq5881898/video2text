@@ -1,6 +1,7 @@
 const { del, list } = require("@vercel/blob");
 
-const RETENTION_MS = 72 * 60 * 60 * 1000;
+const RETENTION_HOURS = 48;
+const RETENTION_MS = RETENTION_HOURS * 60 * 60 * 1000;
 const DELETE_BATCH_SIZE = 100;
 const MEDIA_EXTENSION = /\.(?:m4a|m4b|mp3|wav|mp4|mov|mkv|avi|webm|aac|flac|ogg|oga|opus|wma|aiff?|amr|3g[p2]|mpeg|mpg|m4v|mts|m2ts|ts)$/i;
 
@@ -87,7 +88,7 @@ function createHandler({ listBlobs = list, deleteBlobs = del } = {}) {
         eligible_bytes: expiredBytes,
         deleted: dryRun ? 0 : expired.length,
         deleted_bytes: dryRun ? 0 : expiredBytes,
-        retention_hours: 72,
+        retention_hours: RETENTION_HOURS,
         checked_at: new Date().toISOString(),
       };
       console.log("[blob-cleanup] completed", summary);
@@ -108,3 +109,4 @@ module.exports.deleteInBatches = deleteInBatches;
 module.exports.findExpiredMedia = findExpiredMedia;
 module.exports.isTemporaryMedia = isTemporaryMedia;
 module.exports.scanExpiredMedia = scanExpiredMedia;
+module.exports.RETENTION_HOURS = RETENTION_HOURS;

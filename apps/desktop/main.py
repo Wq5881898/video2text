@@ -49,21 +49,25 @@ if str(REPO_ROOT) not in sys.path:
 
 from packages.shared_core import (
     PipelineConfig,
-    DEEPL_KEY_PATH,
     DEFAULT_JOBS_ROOT,
     GLADIA_KEYS_PATH,
+    GLM_CONFIG_PATH,
+    MINIMAX_CONFIG_PATH,
+    QWEN_CONFIG_PATH,
     SUPPORTED_EXTS,
+    TRANSLATION_PROVIDERS,
     VIDEO_EXTS,
     collect_environment_checks,
     expand_inputs,
     process_many,
-    check_deepl_key,
     check_gladia_key,
+    check_translation_key,
     mask_key,
-    read_deepl_key,
     read_gladia_keys,
-    write_deepl_key,
+    read_translation_key,
+    translation_provider_label,
     write_gladia_keys,
+    write_translation_key,
 )
 from apps.desktop.meta import APP_DESCRIPTION, APP_NAME, APP_VERSION
 
@@ -156,6 +160,7 @@ class PipelineWorker(QObject):
         output_format: str,
         translate: bool,
         source_language: str,
+        translation_provider: str,
         output_dir: str,
     ) -> None:
         super().__init__()
@@ -163,6 +168,7 @@ class PipelineWorker(QObject):
         self.output_format = output_format
         self.translate = translate
         self.source_language = source_language
+        self.translation_provider = translation_provider
         self.output_dir = output_dir
 
     @pyqtSlot()
@@ -196,6 +202,7 @@ class PipelineWorker(QObject):
                 output_format=self.output_format,
                 translate=self.translate,
                 source_language=self.source_language,
+                translation_provider=self.translation_provider,
                 output_dir=Path(self.output_dir) if self.output_dir else None,
             )
             results, failures = process_many(resolved_paths, config, log=log, stage_callback=stage_callback)
@@ -222,17 +229,18 @@ class KeyCheckWorker(QObject):
     result_ready = pyqtSignal(str, int, object)
     finished = pyqtSignal()
 
-    def __init__(self, gladia_keys: list[str], deepl_key: str) -> None:
+    def __init__(self, gladia_keys: list[str], translation_keys: dict[str, str]) -> None:
         super().__init__()
         self.gladia_keys = gladia_keys
-        self.deepl_key = deepl_key
+        self.translation_keys = translation_keys
 
     @pyqtSlot()
     def run(self) -> None:
         for index, key in enumerate(self.gladia_keys):
             self.result_ready.emit("gladia", index, check_gladia_key(key))
-        if self.deepl_key:
-            self.result_ready.emit("deepl", 0, check_deepl_key(self.deepl_key))
+        for provider, key in self.translation_keys.items():
+            if key:
+                self.result_ready.emit(provider, 0, check_translation_key(provider, key))
         self.finished.emit()
 
 
@@ -270,24 +278,35 @@ class KeyManagementDialog(QDialog):
         gladia_layout.addLayout(gladia_buttons)
         root.addWidget(gladia_group)
 
-        deepl_group = QGroupBox("Translation key (DeepL)")
-        deepl_layout = QVBoxLayout(deepl_group)
-        deepl_row = QHBoxLayout()
-        self.deepl_edit = QLineEdit()
-        self.deepl_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self.deepl_edit.setPlaceholderText("DeepL API key")
-        show_key = QCheckBox("Show")
-        show_key.toggled.connect(
-            lambda checked: self.deepl_edit.setEchoMode(
-                QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
+        translation_group = QGroupBox("Translation model keys")
+        translation_layout = QVBoxLayout(translation_group)
+        self.translation_tabs = QTabWidget()
+        self.translation_edits: dict[str, QLineEdit] = {}
+        self.translation_statuses: dict[str, QLabel] = {}
+        for provider in TRANSLATION_PROVIDERS:
+            page = QWidget()
+            page_layout = QVBoxLayout(page)
+            key_row = QHBoxLayout()
+            key_edit = QLineEdit()
+            key_edit.setEchoMode(QLineEdit.EchoMode.Password)
+            key_edit.setPlaceholderText(f"{translation_provider_label(provider)} API key")
+            show_key = QCheckBox("Show")
+            show_key.toggled.connect(
+                lambda checked, edit=key_edit: edit.setEchoMode(
+                    QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
+                )
             )
-        )
-        deepl_row.addWidget(self.deepl_edit)
-        deepl_row.addWidget(show_key)
-        deepl_layout.addLayout(deepl_row)
-        self.deepl_status = QLabel("Not tested")
-        deepl_layout.addWidget(self.deepl_status)
-        root.addWidget(deepl_group)
+            key_row.addWidget(key_edit)
+            key_row.addWidget(show_key)
+            page_layout.addLayout(key_row)
+            status_label = QLabel("Not tested")
+            status_label.setWordWrap(True)
+            page_layout.addWidget(status_label)
+            self.translation_edits[provider] = key_edit
+            self.translation_statuses[provider] = status_label
+            self.translation_tabs.addTab(page, translation_provider_label(provider))
+        translation_layout.addWidget(self.translation_tabs)
+        root.addWidget(translation_group)
 
         actions = QHBoxLayout()
         self.test_button = QPushButton("Test All Keys")
@@ -306,7 +325,8 @@ class KeyManagementDialog(QDialog):
     def load_keys(self) -> None:
         for key in read_gladia_keys(GLADIA_KEYS_PATH):
             self._append_gladia_key(key)
-        self.deepl_edit.setText(read_deepl_key(DEEPL_KEY_PATH))
+        for provider, key_edit in self.translation_edits.items():
+            key_edit.setText(read_translation_key(provider))
 
     def _append_gladia_key(self, key: str) -> None:
         row = self.gladia_table.rowCount()
@@ -343,7 +363,8 @@ class KeyManagementDialog(QDialog):
     def save_keys(self) -> None:
         try:
             write_gladia_keys(GLADIA_KEYS_PATH, self._gladia_keys())
-            write_deepl_key(DEEPL_KEY_PATH, self.deepl_edit.text())
+            for provider, key_edit in self.translation_edits.items():
+                write_translation_key(provider, key_edit.text())
         except OSError as exc:
             QMessageBox.critical(self, "Save Failed", str(exc))
             return
@@ -353,14 +374,17 @@ class KeyManagementDialog(QDialog):
         if self.check_thread is not None:
             return
         keys = self._gladia_keys()
-        deepl_key = self.deepl_edit.text().strip()
-        if not keys and not deepl_key:
+        translation_keys = {
+            provider: key_edit.text().strip()
+            for provider, key_edit in self.translation_edits.items()
+        }
+        if not keys and not any(translation_keys.values()):
             QMessageBox.information(self, "No Keys", "Add at least one key before testing.")
             return
         self.test_button.setEnabled(False)
         self.test_button.setText("Testing...")
         self.check_thread = QThread(self)
-        self.check_worker = KeyCheckWorker(keys, deepl_key)
+        self.check_worker = KeyCheckWorker(keys, translation_keys)
         self.check_worker.moveToThread(self.check_thread)
         self.check_thread.started.connect(self.check_worker.run)
         self.check_worker.result_ready.connect(self.show_check_result)
@@ -382,12 +406,15 @@ class KeyManagementDialog(QDialog):
             else:
                 self.gladia_table.item(index, 2).setText(result.detail or "Usage unavailable")
             return
+        status_label = self.translation_statuses.get(provider)
+        if status_label is None:
+            return
         if result.used is not None and result.limit is not None:
-            self.deepl_status.setText(
+            status_label.setText(
                 f"{result.status}: used {result.used:,} / {result.limit:,}; remaining {result.remaining:,} characters"
             )
         else:
-            self.deepl_status.setText(f"{result.status}: {result.detail}".rstrip(": "))
+            status_label.setText(f"{result.status}: {result.detail}".rstrip(": "))
 
     @pyqtSlot()
     def _check_finished(self) -> None:
@@ -581,11 +608,19 @@ class MainWindow(QMainWindow):
         self.format_combo.currentTextChanged.connect(self._persist_current_state)
         self.translate_checkbox = QCheckBox("Translate English to Chinese")
         self.translate_checkbox.setChecked(True)
-        self.translate_checkbox.toggled.connect(self._persist_current_state)
+        self.translate_checkbox.toggled.connect(self._translation_option_changed)
+        self.translation_provider_combo = QComboBox()
+        for provider in TRANSLATION_PROVIDERS:
+            self.translation_provider_combo.addItem(translation_provider_label(provider), provider)
+        self.translation_provider_combo.setToolTip(
+            "Translation responses use streaming output. Batches are sent serially."
+        )
+        self.translation_provider_combo.currentIndexChanged.connect(self._persist_current_state)
         mode_row.addWidget(mode_label)
         mode_row.addWidget(self.format_combo)
         mode_row.addSpacing(18)
         mode_row.addWidget(self.translate_checkbox)
+        mode_row.addWidget(self.translation_provider_combo)
         mode_row.addStretch(1)
         controls_layout.addLayout(mode_row)
 
@@ -986,6 +1021,7 @@ class MainWindow(QMainWindow):
             output_format=self.format_combo.currentText(),
             translate=self.translate_checkbox.isChecked(),
             source_language=str(self.source_language_combo.currentData()),
+            translation_provider=str(self.translation_provider_combo.currentData()),
             output_dir=output_dir,
         )
         self.worker.moveToThread(self.worker_thread)
@@ -1132,6 +1168,7 @@ class MainWindow(QMainWindow):
             f"Output Format: {self.format_combo.currentText()}",
             f"Source Language: {self.source_language_combo.currentText()}",
             f"Translate: {'Yes' if self.translate_checkbox.isChecked() else 'No'}",
+            f"Translation Model: {self.translation_provider_combo.currentText()}",
             f"Output Folder: {self.output_edit.text().strip() or DEFAULT_OUTPUT_DIR}",
             f"Result File: {result_path or 'Not available yet'}",
         ]
@@ -1161,6 +1198,13 @@ class MainWindow(QMainWindow):
         self.file_list.setAcceptDrops(not processing)
         self.file_list.setSelectionMode(
             QListWidget.SelectionMode.ExtendedSelection if not processing else QListWidget.SelectionMode.SingleSelection
+        )
+        self.source_language_combo.setEnabled(not processing)
+        self.format_combo.setEnabled(not processing)
+        translation_supported = str(self.source_language_combo.currentData()) in {"auto", "en"}
+        self.translate_checkbox.setEnabled(not processing and translation_supported)
+        self.translation_provider_combo.setEnabled(
+            not processing and translation_supported and self.translate_checkbox.isChecked()
         )
 
     def retry_selected(self) -> None:
@@ -1254,8 +1298,18 @@ class MainWindow(QMainWindow):
             "output_format": self.format_combo.currentText(),
             "translate": self.translate_checkbox.isChecked(),
             "source_language": str(self.source_language_combo.currentData()),
+            "translation_provider": str(self.translation_provider_combo.currentData()),
             "output_dir": self.output_edit.text().strip() or str(DEFAULT_OUTPUT_DIR),
         }
+
+    def _translation_option_changed(self, *_args) -> None:
+        source_language = str(self.source_language_combo.currentData())
+        self.translation_provider_combo.setEnabled(
+            not self._is_processing()
+            and source_language in {"auto", "en"}
+            and self.translate_checkbox.isChecked()
+        )
+        self._persist_current_state()
 
     def _source_language_changed(self, *_args) -> None:
         source_language = str(self.source_language_combo.currentData())
@@ -1266,6 +1320,9 @@ class MainWindow(QMainWindow):
             self.translate_checkbox.setToolTip("Chinese and mixed-language modes preserve the source transcript.")
         else:
             self.translate_checkbox.setToolTip("Add a Chinese translation when the detected source is English.")
+        self.translation_provider_combo.setEnabled(
+            translation_supported and self.translate_checkbox.isChecked() and not self._is_processing()
+        )
         self._persist_current_state()
 
     def _write_settings_file(self, target: Path) -> None:
@@ -1351,6 +1408,7 @@ class MainWindow(QMainWindow):
         output_format = str(data.get("output_format", "txt"))
         translate = bool(data.get("translate", True))
         source_language = str(data.get("source_language", "auto"))
+        translation_provider = str(data.get("translation_provider", "minimax"))
         output_dir = str(data.get("output_dir", DEFAULT_OUTPUT_DIR))
         self.preset_autosave_enabled = False
         try:
@@ -1359,6 +1417,9 @@ class MainWindow(QMainWindow):
             source_index = self.source_language_combo.findData(source_language)
             if source_index >= 0:
                 self.source_language_combo.setCurrentIndex(source_index)
+            provider_index = self.translation_provider_combo.findData(translation_provider)
+            if provider_index >= 0:
+                self.translation_provider_combo.setCurrentIndex(provider_index)
             self.translate_checkbox.setChecked(translate)
             self._source_language_changed()
             self.output_edit.setText(output_dir)
@@ -1390,7 +1451,7 @@ class MainWindow(QMainWindow):
 
     def _compute_environment_checks(self, paths: list[Path] | None = None):
         queue_paths = paths if paths is not None else self._queued_paths()
-        needs_video_tools = any(path.suffix.lower() in VIDEO_EXTS for path in queue_paths)
+        needs_video_tools = bool(queue_paths)
         needs_translation = (
             self.translate_checkbox.isChecked()
             and str(self.source_language_combo.currentData()) in {"auto", "en"}
@@ -1398,6 +1459,7 @@ class MainWindow(QMainWindow):
         return collect_environment_checks(
             needs_translation=needs_translation,
             needs_video_tools=needs_video_tools,
+            translation_provider=str(self.translation_provider_combo.currentData()),
         )
 
     def open_key_management(self) -> None:
@@ -1427,15 +1489,16 @@ class MainWindow(QMainWindow):
         for check in checks:
             if not check.ok:
                 if check.name in {"ffmpeg", "ffprobe"}:
-                    errors.append("Video extraction requires ffmpeg/ffprobe. Install them or place them under D:\\program\\ffmpeg\\bin\\")
+                    errors.append("Audio duration detection and splitting require ffmpeg/ffprobe. Install them or place them under D:\\program\\ffmpeg\\bin\\")
                 elif check.name == "gladia":
                     errors.append(
                         f"Gladia key is missing. Set GLADIA_API_KEY or create {check.detail.replace('Missing ', '')}."
                     )
-                elif check.name == "deepl":
+                elif check.name in TRANSLATION_PROVIDERS:
+                    label = translation_provider_label(check.name)
                     errors.append(
-                        "DeepL key is missing. "
-                        f"Set DEEPL_KEY or create {check.detail.replace('Missing ', '')}, or turn translation off."
+                        f"{label} configuration is missing. "
+                        f"Configure {check.detail.replace('Missing ', '')}, or turn translation off."
                     )
                 else:
                     errors.append(f"{check.name}: {check.detail}")
@@ -1574,24 +1637,138 @@ class MainWindow(QMainWindow):
 
 
 def main() -> int:
+    if "--gui-smoke-test" in sys.argv:
+        index = sys.argv.index("--gui-smoke-test")
+        if index + 1 >= len(sys.argv):
+            return 2
+        app = QApplication(sys.argv)
+        window = MainWindow()
+        app.processEvents()
+        payload = {"title": window.windowTitle(), "frame_accepts_drops": window.drop_frame.acceptDrops(),
+                   "queue_accepts_drops": window.file_list.acceptDrops()}
+        Path(sys.argv[index + 1]).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return 0 if payload["title"].startswith(APP_NAME) and payload["frame_accepts_drops"] and payload["queue_accepts_drops"] else 1
+    if "--pipeline-smoke-test" in sys.argv:
+        index = sys.argv.index("--pipeline-smoke-test")
+        if index + 2 >= len(sys.argv):
+            return 2
+        from packages.shared_core.media_pipeline import process_one
+        from packages.shared_core.audio_chunks import write_json_atomic
+
+        request = json.loads(Path(sys.argv[index + 1]).read_text(encoding="utf-8-sig"))
+        logs = []
+        report_path = Path(sys.argv[index + 2])
+        try:
+            config = PipelineConfig(
+                output_format=request.get("output_format", "txt"), translate=bool(request.get("translate")),
+                source_language=request.get("source_language", "auto"), translation_provider=request.get("translation_provider", "minimax"),
+                output_dir=Path(request["output_dir"]), jobs_root=Path(request["jobs_root"]),
+                poll_interval=2, max_audio_seconds=float(request.get("max_audio_seconds", 8000)),
+            )
+            result = process_one(Path(request["input_path"]), config, log=logs.append)
+            write_json_atomic(report_path, {"ok": True, "output_path": str(result.output_path),
+                                           "job_dir": str(result.job_dir), "translated": result.translated, "logs": logs})
+            return 0
+        except Exception as exc:
+            write_json_atomic(report_path, {"ok": False, "error": str(exc), "logs": logs})
+            return 1
+    if "--audio-split-smoke-test" in sys.argv:
+        index = sys.argv.index("--audio-split-smoke-test")
+        if index + 1 >= len(sys.argv):
+            return 2
+        import tempfile
+        from packages.shared_core.audio_chunks import merge_part_transcripts, plan_audio_parts, prepare_audio_part, probe_audio, run_media_tool
+        from packages.shared_core.media_pipeline import FFMPEG_FALLBACK, FFPROBE_FALLBACK, find_binary, render_srt_en
+
+        ffmpeg = find_binary("ffmpeg", FFMPEG_FALLBACK)
+        ffprobe = find_binary("ffprobe", FFPROBE_FALLBACK)
+        with tempfile.TemporaryDirectory(prefix="video2text-native-smoke-") as directory:
+            folder = Path(directory)
+            source = folder / "generated-silence.m4a"
+            run_media_tool([ffmpeg, "-v", "error", "-f", "lavfi", "-i", "anullsrc=r=8000:cl=mono", "-t", "12309",
+                            "-c:a", "aac", "-b:a", "8k", str(source)])
+            metadata = probe_audio(ffprobe, source)
+            parts = plan_audio_parts(metadata["duration_seconds"])
+            durations = []
+            transcripts = []
+            for part in parts:
+                output = prepare_audio_part(source, folder / f"part-{part['index']}.m4a", part, metadata["codec"], ffmpeg, ffprobe)
+                durations.append(probe_audio(ffprobe, output)["duration_seconds"])
+                transcripts.append({"job_id": f"native-smoke-{part['index']}", "languages": ["en"],
+                                    "segments": [{"start": 1.0, "end": 2.0, "text": f"Part {part['index'] + 1}", "speaker": 0}]})
+            merged = merge_part_transcripts(parts, transcripts, metadata["duration_seconds"])
+            srt = folder / "generated-silence.srt"
+            render_srt_en(merged["segments"], srt)
+            payload = {"ok": len(parts) == 2 and all(value <= 8000 for value in durations),
+                       "generated_test_audio": True, "source_seconds": metadata["duration_seconds"],
+                       "parts": parts, "actual_part_seconds": durations, "merged_srt": srt.read_text(encoding="utf-8")}
+        Path(sys.argv[index + 1]).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return 0 if payload["ok"] else 1
+    if "--dedup-smoke-test" in sys.argv:
+        index = sys.argv.index("--dedup-smoke-test")
+        if index + 2 >= len(sys.argv):
+            return 2
+        from packages.shared_core.media_pipeline import run_dedup
+
+        segments = run_dedup(Path(sys.argv[index + 1]), Path(sys.argv[index + 2]))
+        return 0 if segments else 1
+    if "--translation-smoke-test" in sys.argv:
+        index = sys.argv.index("--translation-smoke-test")
+        if index + 2 >= len(sys.argv):
+            return 2
+        from packages.shared_core.media_pipeline import llm_translate, render_srt_bilingual
+
+        input_path = Path(sys.argv[index + 1])
+        output_dir = Path(sys.argv[index + 2])
+        provider = sys.argv[index + 3] if index + 3 < len(sys.argv) else "minimax"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        zh_path = output_dir / "gladia_zh.json"
+        srt_path = output_dir / "result.srt"
+        llm_translate.main([str(input_path), str(zh_path), provider])
+        en_segments = json.loads(input_path.read_text(encoding="utf-8-sig"))
+        zh_segments = json.loads(zh_path.read_text(encoding="utf-8"))["segments_zh"]
+        if len(en_segments) != len(zh_segments):
+            raise RuntimeError(f"Packaged {provider} translation count mismatch")
+        render_srt_bilingual(en_segments, zh_segments, srt_path)
+        if srt_path.read_text(encoding="utf-8").count(" --> ") != len(en_segments):
+            raise RuntimeError("Packaged SRT cue count mismatch")
+        return 0
     if "--self-test" in sys.argv:
         index = sys.argv.index("--self-test")
         if index + 1 >= len(sys.argv):
             return 2
-        checks = collect_environment_checks(needs_translation=True, needs_video_tools=True)
+        checks = collect_environment_checks(
+            needs_translation=True,
+            needs_video_tools=True,
+            translation_provider="minimax",
+        )
+        translation_configs = {
+            provider: {
+                "path": str(path),
+                "key_present": bool(read_translation_key(provider)),
+            }
+            for provider, path in {
+                "minimax": MINIMAX_CONFIG_PATH,
+                "glm": GLM_CONFIG_PATH,
+                "qwen": QWEN_CONFIG_PATH,
+            }.items()
+        }
         payload = {
             "config_root": str(GLADIA_KEYS_PATH.parent),
+            "max_audio_seconds": 8000,
+            "long_audio_supported": True,
             "jobs_root": str(JOBS_ROOT),
             "gladia_keys_path": str(GLADIA_KEYS_PATH),
             "gladia_key_count": len(read_gladia_keys(GLADIA_KEYS_PATH)),
-            "deepl_key_path": str(DEEPL_KEY_PATH),
-            "deepl_key_present": bool(read_deepl_key(DEEPL_KEY_PATH)),
+            "minimax_config_path": str(MINIMAX_CONFIG_PATH),
+            "minimax_key_present": translation_configs["minimax"]["key_present"],
+            "translation_configs": translation_configs,
             "environment": [
                 {"name": check.name, "ok": check.ok, "detail": check.detail} for check in checks
             ],
         }
         Path(sys.argv[index + 1]).write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        return 0 if payload["gladia_key_count"] and payload["deepl_key_present"] and all(
+        return 0 if payload["gladia_key_count"] and payload["minimax_key_present"] and all(
             check["ok"] for check in payload["environment"]
         ) else 1
     app = QApplication(sys.argv)

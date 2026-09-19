@@ -1,5 +1,6 @@
 const { waitUntil } = require("@vercel/functions");
 const {
+  continuationCursor,
   jobResultPath,
   jobStatusPath,
   jobWorkPath,
@@ -9,8 +10,9 @@ const {
 } = require("./jobs-lib");
 
 function continuationIsStale(payload) {
-  if (payload?.status !== "processing") return false;
   const age = Date.now() - new Date(payload.updated_at || 0).getTime();
+  if (payload?.status === "queued") return age > 60_000;
+  if (payload?.status !== "processing") return false;
   if (["translation_paused", "transcription_paused"].includes(payload.stage)) {
     return true;
   }
@@ -20,11 +22,12 @@ function continuationIsStale(payload) {
       "translation_resuming",
       "transcription_checkpoint",
       "transcription_resuming",
+      "transcription_done",
     ].includes(payload.stage)
   ) {
     return age > 60_000;
   }
-  return ["translating", "poll_transcription"].includes(payload.stage) && age > 240_000;
+  return ["translating", "poll_transcription", "prepare_audio", "upload_to_gladia", "submit_transcription"].includes(payload.stage) && age > 360_000;
 }
 
 module.exports = async function handler(req, res) {
@@ -69,7 +72,11 @@ module.exports = async function handler(req, res) {
     if (continuationIsStale(payload)) {
       const work = await readJson(jobWorkPath(jobId));
       if (work) {
-        const nextIndex = Math.max(0, Number(work.next_index) || 0);
+        if (Number(work.worker_lease?.expires_at) > Date.now()) {
+          res.status(200).json({ ok: true, ...payload });
+          return;
+        }
+        const nextIndex = continuationCursor(work);
         const total = Array.isArray(work.segments_en) ? work.segments_en.length : 0;
         const transcribing = work.stage === "transcribing";
         const resumedPayload = {

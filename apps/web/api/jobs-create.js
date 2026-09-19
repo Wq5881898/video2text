@@ -4,7 +4,7 @@ const {
   jobStatusPath,
   jobWorkPath,
   makeJobId,
-  submitJob,
+  continuationCursor,
   triggerJobContinuation,
   updateJobStatus,
   writeJson,
@@ -62,6 +62,12 @@ module.exports = async function handler(req, res) {
       res.status(400).json({ ok: false, error: "source_url is required" });
       return;
     }
+    let parsedSource;
+    try { parsedSource = new URL(sourceUrl); } catch { /* Validated below. */ }
+    if (!parsedSource || !["http:", "https:"].includes(parsedSource.protocol)) {
+      res.status(400).json({ ok: false, error: "source_url must be an HTTP(S) media URL" });
+      return;
+    }
     if (!fileName) {
       res.status(400).json({ ok: false, error: "file_name is required" });
       return;
@@ -94,46 +100,31 @@ module.exports = async function handler(req, res) {
       status_path: jobStatusPath(jobId),
     });
 
+    const work = {
+      job,
+      stage: "transcribing",
+      cursor_version: 2,
+      transcription_part_index: 0,
+      gladia_job_id: null,
+      segments_en: [],
+      segments_zh: [],
+      next_index: 0,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    await writeJson(jobWorkPath(jobId), work);
+
     waitUntil(
       (async () => {
         try {
           await updateJobStatus(jobId, {
             status: "processing",
-            stage: "preparing",
+            stage: "transcription_checkpoint",
             message: "Preparing job on the cloud runtime.",
             request: job,
           });
-          const gladiaJobId = await submitJob(job, {
-            onStage: async (stage, message, extra = {}) => {
-              await updateJobStatus(jobId, {
-                status: "processing",
-                stage,
-                message,
-                request: job,
-                ...extra,
-              });
-            },
-          });
-          const work = {
-            job,
-            stage: "transcribing",
-            gladia_job_id: gladiaJobId,
-            segments_en: [],
-            segments_zh: [],
-            next_index: 0,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          };
-          await writeJson(jobWorkPath(jobId), work);
-          await updateJobStatus(jobId, {
-            status: "processing",
-            stage: "transcription_checkpoint",
-            message: "Transcription job submitted. Waiting for the speech engine.",
-            request: job,
-            gladia_job_id: gladiaJobId,
-          });
           try {
-            await triggerJobContinuation(jobId, 0);
+            await triggerJobContinuation(jobId, continuationCursor(work));
           } catch (error) {
             console.error("[jobs-create] unable to start transcription continuation", {
               jobId,
@@ -144,13 +135,11 @@ module.exports = async function handler(req, res) {
               stage: "transcription_paused",
               message: "Transcription polling will restart when the task page reconnects.",
               request: job,
-              gladia_job_id: gladiaJobId,
             });
             return;
           }
           console.log("[jobs-create] transcription continuation started", {
             jobId,
-            gladiaJobId,
           });
         } catch (error) {
           console.error("[jobs-create] background processing failed", {

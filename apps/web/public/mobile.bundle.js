@@ -6568,7 +6568,7 @@ async function uploadFileWithRetry(sourceFile) {
         attempt === 1 ? "Starting secure upload to cloud storage." : "The first upload stalled. Retrying once..."
       );
       resetStallTimer();
-      const blob = await upload(sourceFile.name, sourceFile, {
+      const blob = await upload(`uploads/${sourceFile.name}`, sourceFile, {
         access: "public",
         handleUploadUrl: "./api/blob-upload",
         multipart: sourceFile.size > 100 * 1024 * 1024,

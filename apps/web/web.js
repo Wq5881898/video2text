@@ -42,6 +42,8 @@ async function refreshStatus() {
 
 let processingTimer = null;
 let processingStartedAt = 0;
+let processingStage = "Preparing request";
+let processingDetail = "";
 
 function stopProcessingTimer() {
   if (processingTimer !== null) {
@@ -84,13 +86,60 @@ function renderPendingState(stage = "Preparing request", detail = "") {
 function startProcessingTimer(stage, detail) {
   processingStartedAt = Date.now();
   stopProcessingTimer();
+  updateProcessingStage(stage, detail);
   processingTimer = window.setInterval(() => {
-    renderPendingState(stage, detail);
+    renderPendingState(processingStage, processingDetail);
   }, 1000);
 }
 
 function updateProcessingStage(stage, detail = "") {
+  processingStage = stage;
+  processingDetail = detail;
   renderPendingState(stage, detail);
+}
+
+async function processCloudSource(sourceUrl, fileName, outputFormat, translate) {
+  updateProcessingStage("Checking audio duration", "Checking whether your recording needs automatic splitting.");
+  const info = await fetchJson("./api/media-info", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_url: sourceUrl }),
+  });
+  if (!info.ok || !info.payload?.ok) {
+    throw new Error(info.payload?.error || "Could not inspect your uploaded media.");
+  }
+  const createBackgroundJob = async () => {
+    if (!info.payload.splitting_supported) {
+      throw new Error("For recordings longer than 8000 seconds, download the media and use Upload a local file for automatic splitting.");
+    }
+    updateProcessingStage("Creating background job", "This long recording will be split automatically and merged into one result.");
+    const created = await fetchJson("./api/jobs-create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source_url: sourceUrl,
+        file_name: fileName,
+        output_format: outputFormat,
+        translate,
+        media_type: /\.(mp4|mov|mkv|avi|wmv|flv|webm|m4v)$/i.test(fileName) ? "video" : "audio",
+      }),
+    });
+    if (!created.ok || !created.payload?.ok || !/^\/jobs\/job_[a-f0-9]{12}$/.test(created.payload.job_url || "")) {
+      throw new Error(created.payload?.error || "Could not create the background transcription job.");
+    }
+    stopProcessingTimer();
+    window.location.assign(created.payload.job_url);
+    return null;
+  };
+  if (info.payload.split_required) return createBackgroundJob();
+  updateProcessingStage("Transcribing", "The cloud runtime is transcribing your media now.");
+  const result = await fetchJson("./api/transcribe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ input_mode: "url", source_url: sourceUrl, file_name: fileName, output_format: outputFormat, translate }),
+  });
+  if (result.payload?.status === "background_required") return createBackgroundJob();
+  return result;
 }
 
 function renderResultSummary(payload, sourceKind) {
@@ -163,7 +212,7 @@ async function submitPlaceholder(event) {
         "Uploading your media to cloud storage before transcription starts.",
       );
       output.textContent = "Uploading media to cloud storage...";
-      const blob = await uploadToBlob(sourceFile.name, sourceFile, {
+      const blob = await uploadToBlob(`uploads/${sourceFile.name}`, sourceFile, {
         access: "public",
         handleUploadUrl: "./api/blob-upload",
         multipart: sourceFile.size > 5_000_000,
@@ -191,17 +240,7 @@ async function submitPlaceholder(event) {
         "Upload completed. The cloud runtime is transcribing your media now.",
       );
       output.textContent = "Blob upload completed. Starting transcription...";
-      result = await fetchJson("./api/transcribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          input_mode: "url",
-          source_url: blob.url,
-          file_name: sourceFile.name,
-          output_format: outputFormat,
-          translate,
-        }),
-      });
+      result = await processCloudSource(blob.url, sourceFile.name, outputFormat, translate);
     } else {
       if (!sourceUrl) {
         throw new Error("Choose a local file or enter a media URL.");
@@ -211,17 +250,11 @@ async function submitPlaceholder(event) {
         "The cloud runtime is downloading and transcribing your source URL.",
       );
       output.textContent = "Transcribing from source URL...";
-      result = await fetchJson("./api/transcribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          input_mode: "url",
-          source_url: sourceUrl,
-          output_format: outputFormat,
-          translate,
-        }),
-      });
+      const sourceName = decodeURIComponent(new URL(sourceUrl).pathname.split("/").pop() || "media");
+      result = await processCloudSource(sourceUrl, sourceName, outputFormat, translate);
     }
+
+    if (!result) return;
 
     output.textContent = JSON.stringify(
       { status: result.status, body: result.payload },

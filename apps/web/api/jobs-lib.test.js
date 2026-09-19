@@ -136,6 +136,22 @@ test("transcription polling returns a later completed result", async () => {
   }
 });
 
+test("a polling request timeout preserves the submitted job for the next window", async () => {
+  const previousFetch = global.fetch;
+  const previousKey = process.env.GLADIA_API_KEY;
+  process.env.GLADIA_API_KEY = "test-gladia-key";
+  global.fetch = async () => { throw new DOMException("Timed out", "TimeoutError"); };
+  try {
+    const result = await pollTranscriptionWindow("gladia-job");
+    assert.equal(result.done, false);
+    assert.equal(result.status, "pending");
+  } finally {
+    global.fetch = previousFetch;
+    if (previousKey === undefined) delete process.env.GLADIA_API_KEY;
+    else process.env.GLADIA_API_KEY = previousKey;
+  }
+});
+
 test("MiniMax rejects mismatched ids", async () => {
   await withMiniMaxResponse({
     finish_reason: "stop",
