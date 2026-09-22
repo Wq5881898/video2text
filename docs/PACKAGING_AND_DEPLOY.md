@@ -44,6 +44,23 @@ release\video2text\video2text\config\qwen.json
 
 These files can contain secrets. The release directory must be handled as a private artifact and must not be committed.
 
+### Public GitHub Artifact
+
+Never upload the private build directory directly. After the verified build completes, create a sanitized public ZIP:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\desktop\package_public_release.ps1
+```
+
+Outputs:
+
+```text
+release\artifacts\video2text-windows-x64-v0.1.0.zip
+release\artifacts\video2text-windows-x64-v0.1.0.zip.sha256
+```
+
+The packager copies the complete one-folder application, removes local credentials and runtime jobs/logs, writes empty provider templates, scans text files for every known local key, adds `README-FIRST.txt`, and then creates the ZIP and SHA256 file. A detected secret aborts packaging.
+
 ### Build Safeguards
 
 The build script:
@@ -135,3 +152,4 @@ Run `npm run test:cloud` only when a real deployed smoke test is intended, becau
 - Desktop reusable logic lives in `packages/shared_core/`; web-safe cloud logic lives in `apps/web/api/`.
 - Local runtime state, secrets, `node_modules/`, build outputs, and test artifacts remain outside Git.
 - R2/Ubuntu is a documented alternative only and is not part of the current deployment.
+- Public GitHub assets must come from `release/artifacts/`, never directly from the private `release/video2text/` build.

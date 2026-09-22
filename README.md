@@ -131,6 +131,14 @@ release\video2text\video2text\
 
 发布包包含 `ffmpeg.exe` / `ffprobe.exe`，构建后会自动执行模块、DLL、统一配置路径、去重、12,309 秒音频真实切分/合并和拖拽初始化 smoke test。不要只复制 EXE；必须保留同级 `_internal/`、`config/` 和 `outputs/`。
 
+生成可上传 GitHub 的无密钥 ZIP：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\desktop\package_public_release.ps1
+```
+
+产物位于 `release\artifacts\`。公开包会把本机 Key 替换为空模板并执行泄漏扫描；不要把普通 `release\video2text\` 私人测试目录直接上传。
+
 ## Web 本地开发与部署 | Web Development And Deploy
 
 ```powershell
@@ -163,6 +171,7 @@ node --test api/*.test.js
 
 - [`docs/CURRENT_STATE_ZH.md`](docs/CURRENT_STATE_ZH.md)：当前实现、已验证状态和已知边界
 - [`docs/PACKAGING_AND_DEPLOY.md`](docs/PACKAGING_AND_DEPLOY.md)：打包、部署与验证
+- [`docs/RELEASE_NOTES_v0.1.0.md`](docs/RELEASE_NOTES_v0.1.0.md)：Windows `v0.1.0` 发布说明
 - [`docs/REPO_BOUNDARIES.md`](docs/REPO_BOUNDARIES.md)：代码与运行时边界
 - [`docs/LONG_TEXT_TRANSLATION_BENCHMARK_ZH.md`](docs/LONG_TEXT_TRANSLATION_BENCHMARK_ZH.md)：三模型测试及当前落地决策
 - [`docs/CLOUD_STORAGE_ALTERNATIVE_ZH.md`](docs/CLOUD_STORAGE_ALTERNATIVE_ZH.md)：R2 自托管备选预研
