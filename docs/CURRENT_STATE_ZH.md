@@ -7,6 +7,8 @@
 
 仓库包含两个可用产品面：
 
+Windows `v0.1.0` 已发布到 [GitHub Releases](https://github.com/Wq5881898/video2text/releases/tag/v0.1.0)。公开 ZIP 保留完整 one-folder 目录，但不包含任何 API Key。
+
 | 能力 | Windows 桌面端 | Vercel Web 端 |
 |---|---|---|
 | 输入 | 多文件、文件夹、拖拽队列 | 单文件或单 URL |
@@ -75,6 +77,7 @@ Web 端生产环境：
 - Node 测试包含真实生成 12,309 秒静音音频、切成两段、合并全局时间轴并删除临时分段；
 - 生产 `/api/health` 返回 `status=ready`；
 - 生产 `/api/capabilities` 检测 Blob、Gladia、MiniMax 已配置。
+- GitHub `v0.1.0` 公开 API 已验证：标签指向提交 `23274a5`，ZIP 与 SHA256 两个资产均已公开且大小匹配。
 
 这些测试不等于每次都执行真实付费转写。真实 Gladia/LLM smoke test 应单独运行并记录任务 ID。
 

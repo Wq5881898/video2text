@@ -11,6 +11,7 @@
 - Web 端：Vercel 生产部署，单文件或单 URL、Safari/mobile 后台任务、固定 Job URL、长音频断点续跑。
 - Web: production Vercel deployment with one file or URL per task, Safari/mobile background jobs, persistent job URLs, and resumable long-audio processing.
 - 当前生产 Web 地址：[https://web-iota-one-31.vercel.app](https://web-iota-one-31.vercel.app)
+- Windows 正式版：[v0.1.0 Release](https://github.com/Wq5881898/video2text/releases/tag/v0.1.0)
 - 权威开发状态见 [`docs/CURRENT_STATE_ZH.md`](docs/CURRENT_STATE_ZH.md)。
 
 ## 产品边界 | Product Boundaries
@@ -138,6 +139,8 @@ powershell -ExecutionPolicy Bypass -File scripts\desktop\package_public_release.
 ```
 
 产物位于 `release\artifacts\`。公开包会把本机 Key 替换为空模板并执行泄漏扫描；不要把普通 `release\video2text\` 私人测试目录直接上传。
+
+当前公开下载：[video2text-windows-x64-v0.1.0.zip](https://github.com/Wq5881898/video2text/releases/download/v0.1.0/video2text-windows-x64-v0.1.0.zip)。同时提供 `.sha256` 校验文件。
 
 ## Web 本地开发与部署 | Web Development And Deploy
 

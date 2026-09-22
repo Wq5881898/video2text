@@ -61,6 +61,14 @@ release\artifacts\video2text-windows-x64-v0.1.0.zip.sha256
 
 The packager copies the complete one-folder application, removes local credentials and runtime jobs/logs, writes empty provider templates, scans text files for every known local key, adds `README-FIRST.txt`, and then creates the ZIP and SHA256 file. A detected secret aborts packaging.
 
+Published `v0.1.0` release:
+
+```text
+https://github.com/Wq5881898/video2text/releases/tag/v0.1.0
+```
+
+The published ZIP SHA256 is `1f91c8e2d863d1c071cd1bd4af1a8f5be5933e6d3c6db5d1385560f60f36169c`.
+
 ### Build Safeguards
 
 The build script:
