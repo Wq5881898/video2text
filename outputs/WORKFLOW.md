@@ -2,6 +2,8 @@
 
 > 任何 session 读这份 SOP 都能从 0 跑通 Naked News 录音 → 中英双语 SRT。
 > 当前架构: **Gladia 转写英文 (en-only) + DeepL 翻译中文 (en→zh) + 零干预 Windows 流水线**。
+>
+> **范围说明（2026-09-22）**：本文只适用于 `outputs/work/run_all_win.py` 的历史多期批处理，不是当前桌面 GUI 或 Vercel Web 产品说明。当前产品状态以 [`../docs/CURRENT_STATE_ZH.md`](../docs/CURRENT_STATE_ZH.md) 为准。
 
 ---
 

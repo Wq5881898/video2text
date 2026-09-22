@@ -2,6 +2,10 @@
 
 This directory contains the cloud web surface for `video2text`.
 
+Production: [https://web-iota-one-31.vercel.app](https://web-iota-one-31.vercel.app)
+
+As of September 22, 2026, this is a deployed product surface, not a future scaffold. The authoritative cross-product status is in [`../../docs/CURRENT_STATE_ZH.md`](../../docs/CURRENT_STATE_ZH.md).
+
 ## Scope
 
 - single-file browser upload
@@ -67,14 +71,16 @@ http://127.0.0.1:3100/
 
 ## Production Status
 
-Verified on July 27, 2026:
+Verified on September 22, 2026:
 
 - `GET /api/health`
 - `GET /api/capabilities`
-- `POST /api/transcribe` with URL input
-- `POST /api/transcribe` after Blob upload for large local files
-- `txt` and `srt`
-- optional Chinese translation
+- production health reports `ready`
+- Blob, Gladia, and MiniMax configuration are present
+- local Python tests: 32 passed
+- web Node tests: 35 passed, including real FFmpeg splitting of a generated 12,309-second fixture
+
+`/api/capabilities` is a basic environment probe. Its current `sync-direct` description does not enumerate the newer background-job, checkpoint, long-audio, and cleanup paths; this README and `CURRENT_STATE_ZH.md` are the complete product specification.
 
 ## Limits
 
@@ -90,12 +96,26 @@ Verified on July 27, 2026:
 - `MINIMAX_API_KEY` (server-side only; never put this key in browser code)
 - `MINIMAX_BASE_URL` and `MINIMAX_MODEL` are optional overrides
 - `BLOB_READ_WRITE_TOKEN`
+- `CRON_SECRET`
+
+## Tests
+
+```powershell
+cd D:\projectQ\video2text\apps\web
+node --test api/*.test.js
+```
+
+The default suite mocks paid provider calls. The real-FFmpeg long-audio test generates its own silent fixture and verifies split cleanup. Use `npm run test:cloud` only when intentionally testing deployed services and accepting remote API usage.
 
 ---
 
 # Web 应用说明
 
 这个目录是 `video2text` 的云端网页端。
+
+生产地址：[https://web-iota-one-31.vercel.app](https://web-iota-one-31.vercel.app)
+
+截至 2026-09-22，这已经是正式部署的产品入口，不再是未来骨架。跨桌面/Web 的权威状态见 [`../../docs/CURRENT_STATE_ZH.md`](../../docs/CURRENT_STATE_ZH.md)。
 
 ## 功能范围
 
@@ -155,14 +175,16 @@ http://127.0.0.1:3100/
 
 ## 当前验证状态
 
-已在 2026 年 7 月 27 日验证：
+已在 2026 年 9 月 22 日验证：
 
 - `GET /api/health`
 - `GET /api/capabilities`
-- URL 模式转写成功
-- 本地大文件先上传 Blob 再转写成功
-- `txt` 和 `srt` 都可用
-- 中译可用
+- 生产健康状态为 `ready`
+- Blob、Gladia、MiniMax 环境配置存在
+- Python 本地测试 32 项通过
+- Web Node 测试 35 项通过，包含真实生成并切分 12,309 秒静音音频
+
+`/api/capabilities` 目前是基础环境探针，其中的 `sync-direct` 摘要尚未完整列出后台任务、断点、长音频和清理路径；完整规格以本文及 `CURRENT_STATE_ZH.md` 为准。
 
 ## 当前限制
 
@@ -178,6 +200,15 @@ http://127.0.0.1:3100/
 - `MINIMAX_API_KEY`
 - `BLOB_READ_WRITE_TOKEN`
 - `CRON_SECRET`
+
+## 测试
+
+```powershell
+cd D:\projectQ\video2text\apps\web
+node --test api/*.test.js
+```
+
+默认测试会模拟付费服务调用；真实 FFmpeg 长音频测试自行生成静音样本并验证临时分段删除。只有明确接受远端 API 消耗时才运行 `npm run test:cloud`。
 
 ## 临时上传清理
 

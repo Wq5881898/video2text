@@ -2,7 +2,7 @@
 
 > 任何 session 在 outputs/ 下启动时必读。完整 SOP 在同目录 `WORKFLOW.md`, 本文件是**铁律 + 坑点速查**, 用于避开已踩过的坑。
 >
-> **当前架构 (2026-07 改)**: Gladia en-only stt + DeepL Free en→zh 翻译 + `run_all_win.py auto` 零干预流水线。旧 `gladia_with_translation.py` 走 Gladia translation 池已废弃 (quota 触顶, 见坑 AJ).
+> **当前产品架构 (2026-09)**: 桌面 GUI 使用 Gladia + MiniMax/GLM/Qwen 流式翻译；Web 使用 Gladia + MiniMax + Vercel Blob 可恢复任务。`outputs/work/run_all_win.py auto` 是仍保留的历史批处理流水线，继续使用 Gladia en-only + DeepL；不要把它与桌面/Web 产品路径混为一谈。旧 `gladia_with_translation.py` 的 Gladia translation 池已废弃 (quota 触顶, 见坑 AJ).
 >
 > **流程图**: 见 `WORKFLOW.md` 第 0 节 Mermaid 流程图 (主流程 + 旧架构对比)。
 
@@ -18,9 +18,9 @@
 
 ---
 
-## 1. 多期批量唯一可靠模式 (坑 U 修复)
+## 1. 历史多期批量流水线 (坑 U 修复)
 
-bash 工具 45 秒超时, Gladia 5-10 分钟, **不能用 nohup/setsid**。当前**生产入口改 Windows 原生** `run_all_win.py auto` (不经过 WSL/bwrap), 一次跑 30 分钟自轮询。**多期旧模式** submit_only + fetch_done 仍可用, 但已非主推路径。
+本节只描述 `outputs/work` 下的历史多期字幕批处理，不是当前桌面 GUI/Web 产品。bash 工具 45 秒超时, Gladia 5-10 分钟, **不能用 nohup/setsid**。该批处理的可靠入口是 Windows 原生 `run_all_win.py auto` (不经过 WSL/bwrap), 一次跑 30 分钟自轮询。更旧的 submit_only + fetch_done 仍可用, 但已非主推路径。
 
 ```bash
 # ⭐ 主推: Windows 原生一键流水线

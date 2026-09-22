@@ -1,39 +1,99 @@
 # Desktop App
 
-This folder is the desktop-product entrypoint layer.
+`apps/desktop/main.py` is both the PyQt6 product entry point and the current desktop implementation. The old `app/` package is only a compatibility layer.
 
-Current status:
-- wraps the existing PyQt6 application
-- keeps compatibility with the current release/build scripts
-- is the future home for desktop-only UI and packaging code
+## Start From Source
 
-Current entrypoint:
-- `apps/desktop/main.py`
+```powershell
+cd D:\projectQ\video2text
+run_gui.bat
+```
 
-Current implementation source:
-- `app/main.py`
-# API key management
+Direct Python entry:
 
-Open `API Key Management` in the menu bar to maintain local provider credentials.
+```powershell
+D:\projectQ\.venv\Scripts\python.exe apps\desktop\main.py
+```
 
-- Gladia supports multiple transcription keys. The app stores one key per line in `config/gladia_keys.txt`. It estimates current-month usage from visible job durations against Gladia's published 10-hour Free limit. Gladia does not expose the account plan or official remaining balance through its public API, so paid-plan usage still requires the provider dashboard.
-- MiniMax M3 translation uses `config/minimax.json`. The key test verifies authentication and the actual model returned by the API; this endpoint does not expose account quota.
-- Keys are masked in the table and are never written to the runtime log. Configuration files remain local and are excluded from Git.
+`run_gui.bat` sets the repository root as the working directory and `PYTHONPATH`, which prevents `ModuleNotFoundError: packages` when launched outside the repository.
 
-## Long recordings / 超长录音
+## Product Capabilities
 
-- Audio longer than 8,000 seconds is split locally into balanced parts below that limit. Parts are transcribed sequentially and merged into a single TXT or SRT named after the original file. SRT timestamps use the full recording timeline.
-- Polling timeouts resume the saved remote job, including its original key binding. Completed parts are reused; terminal remote failures are resubmitted on a manual retry.
-- Intermediate extracted audio and split parts are deleted only after the final output is written successfully. Failed work retains audio and checkpoints for retry. Original recordings and videos are never deleted.
-- Python uses `outputs/work/jobs/` under the project root; EXE uses the same relative directory next to the executable. Both use `config/` at their application root for keys. EXE distributions must keep the executable, `_internal/`, `config/`, and `outputs/` together.
+- drag files or folders into a local batch queue;
+- Auto, English, Chinese, and English + Chinese source-language modes;
+- TXT and SRT output;
+- optional English-to-Chinese translation using MiniMax M3, GLM, or Qwen;
+- streaming translation with serial batches and per-batch checkpoint writes;
+- automatic splitting of recordings longer than 8,000 seconds;
+- resume saved Gladia jobs and completed audio parts;
+- API key management, environment checks, presets, logs, recent outputs, and job details;
+- cleanup of temporary cache without deleting final TXT/SRT or API keys.
 
-- 超过 8,000 秒的音频在本地均分为多个较短片段，逐段串行转写，最终仍生成一个与原文件同名的 TXT 或 SRT；字幕时间自动恢复为整段录音的时间线。
-- 查询超时后重试会续接已保存的任务和原 Key，不重复上传；完成的分段直接复用。远端明确失败的分段在用户重试时重新提交。
-- 只有最终结果成功写入后才删除提取音轨和切分音频；失败时保留音频与断点，方便重试。原始录音、视频不删除。
-- Python 缓存位于项目根目录的 `outputs/work/jobs/`，EXE 缓存位于 EXE 同级的 `outputs/work/jobs/`，Key 统一存放在各自应用根目录的 `config/`。打包版本不能只移动 EXE，需保留其同级依赖目录。
+Translation is skipped when the source is Chinese, mixed-language, or not detected as English.
 
-## Release checks / 打包验证
+## API Key Management
 
-`scripts/desktop/build_release.ps1` performs bounded, hidden-window checks for imports/DLLs, shared key paths, English deduplication, a generated 12,309-second silent audio split, merged subtitle timestamps, and Qt drag-and-drop target initialization. These checks do not submit paid transcription jobs. Real API testing is separate.
+Open `API Key Management` from the main toolbar.
 
-打包脚本自动验证 DLL 与模块导入、统一 Key 路径、去重脚本、12,309 秒生成静音音频的真实切分、字幕时间合并，以及 Qt 拖拽区域初始化。检查有超时保护，不会创建付费转写任务；真实 API 测试单独进行。
+- Gladia supports multiple keys in `config/gladia_keys.txt`, one per line. The usage display is an estimate based on visible current-month jobs and the published free allowance; it is not an official account balance.
+- MiniMax uses `config/minimax.json` and defaults to `MiniMax-M3`.
+- GLM uses `config/glm.json` and defaults to the configured GLM model.
+- Qwen uses `config/qwen.json`; its private base URL and model must be supplied.
+- Translation key tests verify authentication and the returned model. These chat-completion endpoints do not expose remaining account quota.
+- Full keys are masked in the UI and omitted from runtime logs.
+
+Each translation JSON contains:
+
+```json
+{
+  "base_url": "https://provider.example/v1",
+  "api_key": "replace-with-local-secret",
+  "model": "provider-model-name"
+}
+```
+
+Environment variables such as `MINIMAX_API_KEY`, `GLM_BASE_URL`, or `QWEN_MODEL` override the corresponding JSON fields.
+
+## Long Recordings
+
+- Media longer than 8,000 seconds is split locally into balanced parts below the safe limit.
+- Parts are submitted to Gladia strictly serially and merged into one TXT or SRT named after the original file.
+- SRT timestamps are shifted back to the original recording timeline.
+- Polling timeouts resume the saved remote job with its submitting key binding.
+- Completed parts are reused. A terminal remote failure is resubmitted only after a later manual retry.
+- Extracted audio and split parts are deleted only after final output succeeds. Failed work retains audio and checkpoints for retry.
+- Original recordings and videos are never deleted.
+
+## Paths
+
+| Runtime | Config | Job cache |
+|---|---|---|
+| Python source | `D:\projectQ\video2text\config\` | `D:\projectQ\video2text\outputs\work\jobs\` |
+| Packaged EXE | `<exe-folder>\config\` | `<exe-folder>\outputs\work\jobs\` |
+
+The packaged distribution must keep `video2text.exe`, `_internal/`, `config/`, and `outputs/` together.
+
+## Build And Release Checks
+
+```powershell
+cd D:\projectQ\video2text
+powershell -ExecutionPolicy Bypass -File scripts\desktop\build_release.ps1
+```
+
+The build bundles ffmpeg/ffprobe and then runs bounded hidden-window checks for:
+
+- Python imports and Qt DLL loading;
+- one unified config/jobs path;
+- readable Gladia and MiniMax release configuration;
+- English deduplication;
+- generation and real FFmpeg splitting of a 12,309-second silent fixture;
+- merged full-recording SRT timestamps;
+- Qt window and drag/drop target initialization.
+
+These build checks do not submit paid transcription jobs. Real Gladia and LLM tests remain separate.
+
+---
+
+# 桌面端说明
+
+当前桌面端的真实入口与实现都是 `apps/desktop/main.py`，旧 `app/` 仅为兼容层。桌面端已支持三种 LLM 翻译模型、流式串行分批、8,000 秒长音频自动切分、断点续跑和成功后中间音频清理。完整产品状态见 [`../../docs/CURRENT_STATE_ZH.md`](../../docs/CURRENT_STATE_ZH.md)。

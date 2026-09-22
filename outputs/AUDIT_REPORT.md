@@ -4,6 +4,8 @@
 > **写作时间**: 2026-07-25
 > **目标版本**: `outputs/work/` 下的脚本 + `outputs/CLAUDE.md` + `outputs/WORKFLOW.md`
 > **审计触发**: 用户问"为什么 160802 SRT 缺短段 'It's fun, it's bright,'",调查发现流水线从来不调用外部 dedup.py,之前所有 dedup 修复从未生效。
+>
+> **历史文档说明（2026-09-22）**：本报告记录 2026-07 的 `outputs/work` DeepL 批处理审计，路径、入口和架构描述不代表当前桌面 GUI/Web 产品。当前实现请查看 [`../docs/CURRENT_STATE_ZH.md`](../docs/CURRENT_STATE_ZH.md)。
 
 ---
 
