@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
-  createHandler,
+  cleanupExpiredMedia,
   deleteInBatches,
   isTemporaryMedia,
   scanExpiredMedia,
@@ -64,50 +64,24 @@ test("deletes in bounded batches and avoids empty deletes", async () => {
   assert.deepEqual(batches.map((batch) => batch.length), [100, 100, 5]);
 });
 
-function response() {
-  return {
-    setHeader() {},
-    status(code) { this.code = code; return this; },
-    json(payload) { this.payload = payload; },
-  };
-}
-
-test("handler requires authorization and dry-run never deletes", async () => {
-  const previousSecret = process.env.CRON_SECRET;
-  process.env.CRON_SECRET = "test-cron-secret";
-  let listCalls = 0;
-  let deleteCalls = 0;
-  const handler = createHandler({
-    listBlobs: async () => {
-      listCalls += 1;
-      return { blobs: [{ ...blob("uploads/old.m4a", 168, 250), uploadedAt: new Date(0) }], hasMore: false };
-    },
-    deleteBlobs: async () => { deleteCalls += 1; },
+test("opportunistic cleanup deletes only expired media and reports the result", async () => {
+  const removed = [];
+  const summary = await cleanupExpiredMedia({
+    now: NOW,
+    listBlobs: async () => ({
+      blobs: [
+        blob("uploads/old.m4a", 168, 250),
+        blob("uploads/recent.m4a", 24, 100),
+        blob("jobs/job_123/result.json", 168, 500),
+      ],
+      hasMore: false,
+    }),
+    deleteBlobs: async (urls) => removed.push(...urls),
   });
-  try {
-    const unauthorized = response();
-    await handler({ method: "GET", headers: {}, query: {} }, unauthorized);
-    assert.equal(unauthorized.code, 401);
-    assert.equal(listCalls, 0);
-
-    const preview = response();
-    await handler({ method: "GET", headers: { authorization: "Bearer test-cron-secret" }, query: { dry_run: "1" } }, preview);
-    assert.equal(preview.code, 200);
-    assert.equal(preview.payload.eligible, 1);
-    assert.equal(preview.payload.eligible_bytes, 250);
-    assert.equal(preview.payload.deleted, 0);
-    assert.equal(preview.payload.retention_hours, 48);
-    assert.equal(deleteCalls, 0);
-
-    const cleanup = response();
-    await handler({ method: "GET", headers: { authorization: "Bearer test-cron-secret" }, query: {} }, cleanup);
-    assert.equal(cleanup.code, 200);
-    assert.equal(cleanup.payload.deleted, 1);
-    assert.equal(cleanup.payload.deleted_bytes, 250);
-    assert.equal(cleanup.payload.retention_hours, 48);
-    assert.equal(deleteCalls, 1);
-  } finally {
-    if (previousSecret === undefined) delete process.env.CRON_SECRET;
-    else process.env.CRON_SECRET = previousSecret;
-  }
+  assert.equal(summary.scanned, 3);
+  assert.equal(summary.eligible, 1);
+  assert.equal(summary.deleted, 1);
+  assert.equal(summary.deleted_bytes, 250);
+  assert.equal(summary.retention_hours, 48);
+  assert.deepEqual(removed, ["https://example.public.blob.vercel-storage.com/uploads/old.m4a"]);
 });

@@ -12,6 +12,29 @@ async function fetchJson(url, options) {
   return { ok: response.ok, status: response.status, payload };
 }
 
+async function releaseCompletedUpload(sourceUrl, payload) {
+  const cleanupToken = payload?.source_cleanup_token;
+  if (!cleanupToken) return;
+  delete payload.source_cleanup_token;
+  try {
+    const released = await fetchJson("./api/blob-release", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source_url: sourceUrl, cleanup_token: cleanupToken }),
+    });
+    payload.source_cleanup = {
+      managed: true,
+      deleted: Boolean(released.ok && released.payload?.deleted),
+    };
+    if (!payload.source_cleanup.deleted) {
+      console.warn("Uploaded source deletion was deferred", released.payload?.error);
+    }
+  } catch (error) {
+    payload.source_cleanup = { managed: true, deleted: false };
+    console.warn("Uploaded source deletion was deferred", error);
+  }
+}
+
 async function refreshStatus() {
   const output = document.getElementById("status-output");
   output.textContent = "Loading...";
@@ -139,6 +162,7 @@ async function processCloudSource(sourceUrl, fileName, outputFormat, translate) 
     body: JSON.stringify({ input_mode: "url", source_url: sourceUrl, file_name: fileName, output_format: outputFormat, translate }),
   });
   if (result.payload?.status === "background_required") return createBackgroundJob();
+  if (result.payload?.ok) await releaseCompletedUpload(sourceUrl, result.payload);
   return result;
 }
 

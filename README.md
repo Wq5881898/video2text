@@ -95,9 +95,9 @@ Web 端刻意保持“一次输入、一个结果”，不提供桌面端式批�
 - 每个后台任务获得固定 `/jobs/<job_id>` 地址，刷新或稍后打开不会丢失任务；
 - 长音频自动切分并断点保存，已完成分段不会重新提交；
 - Web 翻译当前固定使用 MiniMax M3；
-- 媒体 Blob 保留阈值为 48 小时，由 Vercel Cron 每天清理；job 状态和结果不属于该媒体清理范围。
+- 转写与结果生成成功后立即删除原始上传媒体；每次开始新上传时，再清理超过 48 小时的失败或遗留媒体。job 状态和结果不属于媒体清理范围，不依赖 Vercel Cron。
 
-Web 详细说明见 [`apps/web/README.md`](apps/web/README.md)。Ubuntu + Cloudflare Tunnel + R2 仍只是备选预研，见 [`docs/CLOUD_STORAGE_ALTERNATIVE_ZH.md`](docs/CLOUD_STORAGE_ALTERNATIVE_ZH.md)。
+Web 详细说明见 [`apps/web/README.md`](apps/web/README.md)。NAS 直传与 Gladia URL 拉取的下一阶段方案见 [`docs/NAS_MEDIA_STORAGE_PLAN_ZH.md`](docs/NAS_MEDIA_STORAGE_PLAN_ZH.md)；R2/Ubuntu 备选预研见 [`docs/CLOUD_STORAGE_ALTERNATIVE_ZH.md`](docs/CLOUD_STORAGE_ALTERNATIVE_ZH.md)。
 
 ## 输入输出 | Input And Output
 

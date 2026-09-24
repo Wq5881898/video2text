@@ -77,8 +77,8 @@ Verified on September 22, 2026:
 - `GET /api/capabilities`
 - production health reports `ready`
 - Blob, Gladia, and MiniMax configuration are present
-- local Python tests: 32 passed
-- web Node tests: 35 passed, including real FFmpeg splitting of a generated 12,309-second fixture
+- local Python tests: 35 passed
+- web Node tests: 45 passed, including real FFmpeg splitting of a generated 12,309-second fixture
 
 `/api/capabilities` is a basic environment probe. Its current `sync-direct` description does not enumerate the newer background-job, checkpoint, long-audio, and cleanup paths; this README and `CURRENT_STATE_ZH.md` are the complete product specification.
 
@@ -96,7 +96,6 @@ Verified on September 22, 2026:
 - `MINIMAX_API_KEY` (server-side only; never put this key in browser code)
 - `MINIMAX_BASE_URL` and `MINIMAX_MODEL` are optional overrides
 - `BLOB_READ_WRITE_TOKEN`
-- `CRON_SECRET`
 
 ## Tests
 
@@ -175,14 +174,14 @@ http://127.0.0.1:3100/
 
 ## 当前验证状态
 
-已在 2026 年 9 月 22 日验证：
+已在 2026 年 9 月 23 日验证：
 
 - `GET /api/health`
 - `GET /api/capabilities`
 - 生产健康状态为 `ready`
 - Blob、Gladia、MiniMax 环境配置存在
-- Python 本地测试 32 项通过
-- Web Node 测试 35 项通过，包含真实生成并切分 12,309 秒静音音频
+- Python 本地测试 35 项通过
+- Web Node 测试 45 项通过，包含真实生成并切分 12,309 秒静音音频
 
 `/api/capabilities` 目前是基础环境探针，其中的 `sync-direct` 摘要尚未完整列出后台任务、断点、长音频和清理路径；完整规格以本文及 `CURRENT_STATE_ZH.md` 为准。
 
@@ -199,7 +198,6 @@ http://127.0.0.1:3100/
 - `GLADIA_API_KEY`
 - `MINIMAX_API_KEY`
 - `BLOB_READ_WRITE_TOKEN`
-- `CRON_SECRET`
 
 ## 测试
 
@@ -212,15 +210,16 @@ node --test api/*.test.js
 
 ## 临时上传清理
 
-- 上传的音频和视频以 48 小时作为清理阈值，便于失败任务检查或重试。
-- Vercel Cron 每天按 `15 4 * * *`（UTC）扫描并清理超过 48 小时的媒体 Blob；实际删除发生在下一次清理运行时，不是满 48 小时立即删除。Hobby 套餐的触发时间可能在对应小时内浮动。
-- `jobs/.../status.json` 和 `result.json` 不属于媒体文件，不会被该任务删除。
-- `CRON_SECRET` 用于验证只有 Vercel Cron 可以调用 `/api/blob-cleanup`。
+- 同步任务或后台任务成功生成最终结果后，立即删除本应用上传到 Blob 的原始音频/视频。
+- 删除失败不会把已完成任务改成失败；系统会记录延迟清理状态，保留结果供用户下载。
+- 每次浏览器申请新的上传令牌时，顺带扫描并删除超过 48 小时的失败或遗留媒体，作为即时删除的兜底。
+- 外部 URL 永远不会被删除；`jobs/.../status.json`、checkpoint 和 `result.json` 也不属于媒体清理范围。
+- 当前实现不配置、不调用 Vercel Cron，也不再需要 `CRON_SECRET`。
 
 ## 超长录音
 
 - 上传的音频或视频超过 8000 秒时，自动均分为小于上限的分段，逐段转写，最终生成原文件名对应的一个 TXT 或 SRT。
 - TXT 按分段顺序合并；SRT 加上分段在原录音中的时间偏移，字幕编号连续。
 - 分段任务 ID 和已完成的文字保存为断点，刷新任务页不会重新提交已完成的分段。任务页显示当前分段及已完成分段数。
-- 切分文件仅存在于云函数临时目录，使用后删除，不额外写入 Blob。原始上传文件仍按 48 小时规则清理。
+- 切分文件仅存在于云函数临时目录，使用后删除，不额外写入 Blob。任务成功后立即删除原始上传文件；失败或遗漏文件由下一次上传触发的 48 小时清理兜底。
 - 时长探测仅支持本项目 Blob 中的上传媒体。超长外部 URL 请先下载，再使用上传文件入口。

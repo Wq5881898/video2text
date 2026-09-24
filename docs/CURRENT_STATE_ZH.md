@@ -1,6 +1,6 @@
 # video2text 当前开发状态
 
-> 基线日期：2026-09-22  
+> 基线日期：2026-09-23
 > 作用：记录已经落地并由当前代码支持的功能。研究设想和未来计划不算作已完成功能。
 
 ## 1. 产品总览
@@ -18,7 +18,7 @@ Windows `v0.1.0` 已发布到 [GitHub Releases](https://github.com/Wq5881898/vid
 | 翻译传输 | 流式、串行批次、逐批缓存 | 可恢复后台批次 |
 | 长音频 | 超过 8,000 秒本地切分 | 超过 8,000 秒云端临时切分 |
 | 任务恢复 | 本地 job cache | Blob checkpoint + 固定 Job URL |
-| 文件保留 | 成功后删中间音频；失败保留 | 原始媒体最多约 48 小时；Cron 兜底清理 |
+| 文件保留 | 成功后删中间音频；失败保留 | 成功后立即删原始媒体；新上传时清理超过 48 小时的遗留媒体 |
 | 批量处理 | 支持 | 不支持，产品设计为单任务 |
 
 ## 2. 桌面端已完成
@@ -46,7 +46,7 @@ Windows `v0.1.0` 已发布到 [GitHub Releases](https://github.com/Wq5881898/vid
 - 超过 8,000 秒的已上传媒体在云函数临时目录逐段切分、严格串行转写并合并。临时分段不写入 Blob。
 - 并发继续请求使用条件写入，避免同一分段被重复付费提交。
 - 翻译当前固定为 MiniMax M3；翻译工作分批推进、校验段 ID，并保存进度。
-- 原始上传媒体的清理阈值为 48 小时。Vercel Cron 每天 `04:15 UTC` 调用清理接口；job 状态和结果受保护。
+- 同步和后台任务成功生成最终结果后，立即删除本应用上传的原始媒体。每次新上传前再清理超过 48 小时的失败或遗留媒体；不依赖 Vercel Cron。外部 URL、job 状态、checkpoint 和结果受保护。
 - `/api/health` 和 `/api/capabilities` 已于 2026-09-22 在线验证。`capabilities` 是基础环境探针，尚未完整枚举后台任务与长音频能力，不能替代本文件。
 
 ## 4. 当前配置
@@ -64,16 +64,15 @@ Web 端生产环境：
 - `MINIMAX_API_KEY`
 - `MINIMAX_BASE_URL`、`MINIMAX_MODEL`（可选覆盖）
 - `BLOB_READ_WRITE_TOKEN`
-- `CRON_SECRET`
 
 真实密钥不应进入 Git。桌面打包时配置会复制到发布目录，发布包必须按敏感文件保管。
 
 ## 5. 当前验证
 
-2026-09-22 本地验证结果：
+2026-09-23 本地验证结果：
 
-- Python `unittest`：32 项通过；
-- Web Node tests：35 项通过；
+- Python `unittest`：35 项通过；
+- Web Node tests：45 项通过；
 - Node 测试包含真实生成 12,309 秒静音音频、切成两段、合并全局时间轴并删除临时分段；
 - 生产 `/api/health` 返回 `status=ready`；
 - 生产 `/api/capabilities` 检测 Blob、Gladia、MiniMax 已配置。
@@ -83,17 +82,18 @@ Web 端生产环境：
 
 ## 6. 已知边界
 
-- Web 仍受 Vercel Function、Blob Hobby 配额和 Cron 调度频率限制。
+- Web 仍受 Vercel Function 和 Blob Hobby 配额限制；当前清理只在任务成功或用户开始新上传时运行，不提供独立定时清理。
 - Web 的 URL 模式不会对任意外部地址做本地时长探测；超长 URL 媒体应先下载后走上传入口。
 - Web 只支持 MiniMax，尚未提供桌面端的 GLM/Qwen 选择。
 - 桌面 CLI 暂未暴露源语言和翻译模型参数，使用默认 Auto + MiniMax；完整选择在 GUI。
 - `outputs/work/run_all_win.py` 等历史批处理仍使用 DeepL。它们不是当前桌面 GUI/Web 产品翻译路径。
-- Ubuntu + Cloudflare Tunnel + R2 是已归档预研方案，尚未实施。
+- NAS 直传、短期签名读取 URL 和 Gladia 直接拉取仍处于下一阶段预研，尚未实施。详见 `NAS_MEDIA_STORAGE_PLAN_ZH.md`。
+- Ubuntu + Cloudflare Tunnel + R2 是另一份备选预研方案，尚未实施。
 
 ## 7. 后续候选事项
 
-- 继续观察 Vercel Blob 48 小时清理后的容量峰值和封停体验；
-- 若迁移，按 R2 直传方案实现，不能让大文件经过 Cloudflare Tunnel；
+- 部署并验证“成功即时删除 + 新上传触发 48 小时兜底清理”，观察 Blob 容量峰值；
+- 按 NAS 存储方案先验证 Gladia 能稳定读取短期签名 URL，再实现浏览器直传和任务迁移；
 - 如有产品需要，再把 GLM/Qwen 选择扩展到 Web；
 - 更新 `/api/capabilities`，使其完整反映后台任务、长音频和清理能力；
 - 为 GLM/Qwen 增加无密钥的示例配置文件。

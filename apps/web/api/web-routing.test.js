@@ -52,6 +52,28 @@ test("short uploads keep the existing sync behavior", async () => {
   assert.equal(page.redirects.length, 0);
 });
 
+test("a completed short upload immediately calls the signed release endpoint", async () => {
+  const sourceUrl = "https://blob.example/short.m4a";
+  const page = await frontend([
+    { ok: true, splitting_supported: true, split_required: false },
+    { ok: true, source_cleanup_token: "signed-token", result: { output_text: "Short transcript" } },
+    { ok: true, deleted: true },
+  ]);
+  const result = await page.context.processCloudSource(sourceUrl, "short.m4a", "txt", false);
+  assert.deepEqual(page.calls.map((call) => call.url), [
+    "./api/media-info",
+    "./api/transcribe",
+    "./api/blob-release",
+  ]);
+  assert.deepEqual(page.calls[2].body, {
+    source_url: sourceUrl,
+    cleanup_token: "signed-token",
+  });
+  assert.equal(result.payload.source_cleanup.managed, true);
+  assert.equal(result.payload.source_cleanup.deleted, true);
+  assert.equal(result.payload.source_cleanup_token, undefined);
+});
+
 test("a Gladia duration rejection can still be handed off without re-uploading", async () => {
   const page = await frontend([
     { ok: true, splitting_supported: true, split_required: false },

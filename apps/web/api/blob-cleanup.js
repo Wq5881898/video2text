@@ -58,55 +58,29 @@ async function deleteInBatches(urls, deleteBlobs = del) {
   }
 }
 
-function createHandler({ listBlobs = list, deleteBlobs = del } = {}) {
-  return async function handler(req, res) {
-    res.setHeader("Cache-Control", "no-store, max-age=0");
-    if (req.method !== "GET") {
-      res.status(405).json({ ok: false, error: "Method not allowed" });
-      return;
-    }
-
-    const secret = process.env.CRON_SECRET;
-    if (!secret) {
-      res.status(503).json({ ok: false, error: "CRON_SECRET is not configured" });
-      return;
-    }
-    if (req.headers.authorization !== `Bearer ${secret}`) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
-      return;
-    }
-
-    try {
-      const dryRun = ["1", "true"].includes(String(req.query?.dry_run || ""));
-      const { expired, scanned, expiredBytes } = await scanExpiredMedia(Date.now(), listBlobs);
-      if (!dryRun) await deleteInBatches(expired, deleteBlobs);
-      const summary = {
-        ok: true,
-        dry_run: dryRun,
-        scanned,
-        eligible: expired.length,
-        eligible_bytes: expiredBytes,
-        deleted: dryRun ? 0 : expired.length,
-        deleted_bytes: dryRun ? 0 : expiredBytes,
-        retention_hours: RETENTION_HOURS,
-        checked_at: new Date().toISOString(),
-      };
-      console.log("[blob-cleanup] completed", summary);
-      res.status(200).json(summary);
-    } catch (error) {
-      console.error("[blob-cleanup] failed", error);
-      res.status(500).json({
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+async function cleanupExpiredMedia({
+  now = Date.now(),
+  listBlobs = list,
+  deleteBlobs = del,
+} = {}) {
+  const { expired, scanned, expiredBytes } = await scanExpiredMedia(now, listBlobs);
+  await deleteInBatches(expired, deleteBlobs);
+  return {
+    scanned,
+    eligible: expired.length,
+    eligible_bytes: expiredBytes,
+    deleted: expired.length,
+    deleted_bytes: expiredBytes,
+    retention_hours: RETENTION_HOURS,
+    checked_at: new Date(now).toISOString(),
   };
 }
 
-module.exports = createHandler();
-module.exports.createHandler = createHandler;
-module.exports.deleteInBatches = deleteInBatches;
-module.exports.findExpiredMedia = findExpiredMedia;
-module.exports.isTemporaryMedia = isTemporaryMedia;
-module.exports.scanExpiredMedia = scanExpiredMedia;
-module.exports.RETENTION_HOURS = RETENTION_HOURS;
+module.exports = {
+  RETENTION_HOURS,
+  cleanupExpiredMedia,
+  deleteInBatches,
+  findExpiredMedia,
+  isTemporaryMedia,
+  scanExpiredMedia,
+};

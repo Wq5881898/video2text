@@ -37,6 +37,7 @@ assert _PIPELINE_SPEC is not None and _PIPELINE_SPEC.loader is not None
 _PIPELINE_SPEC.loader.exec_module(_PIPELINE)
 process_media = _PIPELINE.process_media
 LongAudioRequiresBackground = _PIPELINE.LongAudioRequiresBackground
+source_cleanup_token = _CORE.source_cleanup_token
 
 
 def _json_from_request(request) -> dict:
@@ -200,6 +201,7 @@ def handler(request=None):
             file_content_type=None if file_content_type is None else str(file_content_type),
             source_url=source_url or None,
         )
+        cleanup_token = source_cleanup_token(source_url)
         print(
             "[transcribe] "
             f"request_id={request_id} status=completed output={result.get('output_filename')} "
@@ -211,6 +213,7 @@ def handler(request=None):
             "status": "completed",
             "request_id": request_id,
             "message": "Media processed successfully in the cloud runtime.",
+            **({"source_cleanup_token": cleanup_token} if cleanup_token else {}),
             "request": request_data,
             "result": {
                 **result,

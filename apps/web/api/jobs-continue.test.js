@@ -80,3 +80,35 @@ test("replayed chunk cursors do not change a later checkpoint", async () => {
     assert.equal(writes, 0);
   });
 });
+
+test("a completed background job immediately releases its uploaded source", async () => {
+  const sourceUrl = "https://si4slzwkn8wdmagr.public.blob.vercel-storage.com/uploads/finished-random.m4a";
+  let released = null;
+  let completedStatus = null;
+  await withWorker({
+    verifyJobWorkerSignature: () => true,
+    readJson: async () => ({
+      value: {
+        stage: "rendering",
+        next_index: 0,
+        job: { source_url: sourceUrl, file_name: "finished.m4a", output_format: "txt", translate: false, media_type: "audio" },
+        segments_en: [{ start: 0, end: 1, text: "Done" }],
+      },
+      etag: "v1",
+    }),
+    writeJson: async () => ({ etag: "v2" }),
+    renderJobResult: () => ({ output_filename: "finished.txt", output_text: "Done\n", segment_count: 1, translated: false, media_type: "audio" }),
+    releaseUploadedSource: async (url) => {
+      released = url;
+      return { managed: true, deleted: true };
+    },
+    updateJobStatus: async (_jobId, value) => { completedStatus = value; },
+  }, async (handler) => {
+    const result = response();
+    await handler({ method: "POST", body: { job_id: "job_123456789abc", next_index: 0 }, headers: {} }, result);
+    assert.equal(result.code, 200);
+    assert.equal(result.body.status, "completed");
+    assert.equal(released, sourceUrl);
+    assert.deepEqual(completedStatus.source_cleanup, { managed: true, deleted: true });
+  });
+});

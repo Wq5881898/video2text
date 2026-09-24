@@ -2,11 +2,27 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
   pollTranscriptionWindow,
+  releaseUploadedSource,
   translateSegments,
   translateWorkBatch,
 } = require("./jobs-lib");
 
 const source = [{ start: 0, end: 1, speaker: null, text: "Hello" }];
+const uploadedSource = "https://si4slzwkn8wdmagr.public.blob.vercel-storage.com/uploads/recording-random.m4a";
+
+test("completed jobs can delete an app-managed upload", async () => {
+  const deleted = [];
+  const result = await releaseUploadedSource(uploadedSource, async (url) => deleted.push(url));
+  assert.deepEqual(result, { managed: true, deleted: true });
+  assert.deepEqual(deleted, [uploadedSource]);
+});
+
+test("external source URLs are never deleted", async () => {
+  let deletes = 0;
+  const result = await releaseUploadedSource("https://example.com/audio.m4a", async () => { deletes += 1; });
+  assert.deepEqual(result, { managed: false, deleted: false });
+  assert.equal(deletes, 0);
+});
 
 async function withMiniMaxResponse(choice, run) {
   const previousFetch = global.fetch;

@@ -6,6 +6,7 @@ const {
   jobResultPath,
   jobWorkPath,
   readJson,
+  releaseUploadedSource,
   renderJobResult,
   triggerJobContinuation,
   transcribeWorkWindow,
@@ -54,6 +55,23 @@ async function completeJob(jobId, work, segmentsZh = null) {
     stage: "completed",
     updated_at: new Date().toISOString(),
   });
+  let sourceCleanup = { managed: false, deleted: false };
+  try {
+    sourceCleanup = await releaseUploadedSource(work.job.source_url);
+    if (sourceCleanup.deleted) {
+      console.log("[jobs-continue] uploaded source deleted", { jobId });
+    }
+  } catch (error) {
+    sourceCleanup = {
+      managed: true,
+      deleted: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+    console.warn("[jobs-continue] uploaded source deletion deferred", {
+      jobId,
+      error: sourceCleanup.error,
+    });
+  }
   await updateJobStatus(jobId, {
     status: "completed",
     stage: "done",
@@ -69,6 +87,7 @@ async function completeJob(jobId, work, segmentsZh = null) {
       translated: result.translated,
       media_type: result.media_type,
     },
+    source_cleanup: sourceCleanup,
   });
   return result;
 }

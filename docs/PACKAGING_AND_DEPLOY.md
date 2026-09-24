@@ -124,11 +124,10 @@ Required production environment:
 - `GLADIA_API_KEY`
 - `MINIMAX_API_KEY`
 - `BLOB_READ_WRITE_TOKEN`
-- `CRON_SECRET`
 - optional `MINIMAX_BASE_URL`
 - optional `MINIMAX_MODEL`
 
-The production routes and daily `04:15 UTC` Blob cleanup schedule are defined in `apps/web/vercel.json`.
+Production routes are defined in `apps/web/vercel.json`. Successful tasks release their uploaded media immediately, and each new upload token request performs a best-effort cleanup of media older than 48 hours. No Vercel Cron or `CRON_SECRET` is used.
 
 ## Verification
 

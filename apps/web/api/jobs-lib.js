@@ -1,6 +1,6 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
-const { put, get } = require("@vercel/blob");
+const { del, put, get } = require("@vercel/blob");
 const { appendChunkSegments, buildMediaPlan, isAppMediaUrl, probeMedia, withMediaChunk } = require("./media-chunks");
 
 const GLADIA_BASE = "https://api.gladia.io/v2";
@@ -134,6 +134,14 @@ async function downloadMedia(sourceUrl) {
     contentType:
       response.headers.get("content-type") || "application/octet-stream",
   };
+}
+
+async function releaseUploadedSource(sourceUrl, deleteBlob = del) {
+  if (!isAppMediaUrl(sourceUrl)) {
+    return { managed: false, deleted: false };
+  }
+  await deleteBlob(sourceUrl);
+  return { managed: true, deleted: true };
 }
 
 async function uploadToGladia(filename, bytes, contentType) {
@@ -626,6 +634,7 @@ module.exports = {
   prepareJob,
   processJob,
   readJson,
+  releaseUploadedSource,
   renderJobResult,
   submitJob,
   triggerJobContinuation,
