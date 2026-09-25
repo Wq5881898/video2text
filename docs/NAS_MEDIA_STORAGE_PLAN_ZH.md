@@ -2,6 +2,7 @@
 
 > 状态：可行性方案，尚未实施
 > 建档日期：2026-09-23
+> 技术选型复核：2026-09-25
 > 原则：先完成并验证 Vercel Blob 的短期止损，再单独实施 NAS 迁移；未通过端到端测试前不替换现有生产入口。
 
 ## 1. 目标与阶段划分
@@ -87,7 +88,63 @@ Vercel 只保存小型 JSON：job ID、对象编号、处理阶段、Gladia job 
 - Worker 负责时长探测、切分、Gladia 串行提交、翻译、合并与删除；
 - Vercel 可继续只托管前端，也可以在稳定后完全迁移到 Ubuntu。
 
-## 8. 安全要求
+## 8. 2026-09-25 存储技术选型调研
+
+### 当前推荐：tusd + 普通 NAS 目录 + video2text Worker
+
+当前产品是单用户、单任务、临时媒体处理，不需要分布式对象存储的大部分能力。更贴合需求的方案是：
+
+- `tusd` 负责浏览器可恢复上传，直接写入 NAS 普通目录；
+- `post-finish` 只向任务队列登记“上传完成”，不在 hook 内执行长时间转写；
+- video2text Worker 直接读取普通文件，运行 `ffprobe`、`ffmpeg`、Gladia、翻译和合并；
+- Worker 提供带 HMAC 签名和过期时间的 HTTPS 下载地址，供 Gladia 读取；
+- Caddy/Nginx 负责域名、TLS、请求大小和基础限流；
+- SQLite 保存单机任务状态，成功后删媒体，失败媒体最长保留 48 小时。
+
+该方案的主要优势是 Safari/移动网络中断后可以续传，而且超长音频无需先从对象存储下载到 Worker：Worker 与上传目录共享 NAS 文件系统。tusd 官方提供本地磁盘后端和上传完成 hook；官方同时提示 hook 通常不重试，因此长任务必须交给独立任务系统。
+
+### 如果需要标准 S3：优先评估 VersityGW
+
+VersityGW 可以把现有 NAS 普通目录映射成 S3 API，对象键直接对应目录和文件，而不是使用私有磁盘布局。它提供 Linux/Windows 二进制和 Docker 镜像，采用 Apache 2.0 许可证。对本项目的价值是既可生成标准 S3 预签名 URL，又能让 Worker 直接访问正常文件路径。正式采用前仍需验证预签名 `PUT/GET`、CORS、Range、multipart 和 iOS 上传。
+
+### 其他候选方案
+
+| 方案 | 类型 | 优点 | 当前判断 |
+|---|---|---|---|
+| RustFS | 自托管 S3 | Apache 2.0、Docker、S3 兼容、项目活跃 | 可做第二个 S3 PoC；较新，不直接作为唯一生产存储 |
+| Garage | 自托管 S3 | 轻量、强调家用网络和多地点复制 | 更适合多节点；S3 policy/versioning 等能力不完整，单 NAS 没有明显收益 |
+| SeaweedFS | 分布式文件/对象存储 | S3、文件系统、横向扩展能力完整 | 功能过重，适合多节点或海量文件，不适合当前单用户任务 |
+| rclone `serve s3` | S3 网关 | 可以快速把普通目录暴露为 S3 | 官方仍标记 Experimental，只用于原型验证 |
+| Cloudflare R2 | 外部对象存储 | 浏览器预签名直传、无需公开 NAS、运维少 | 最简单的云端替代，但仍依赖第三方配额和计费 |
+| Backblaze B2 | 外部对象存储 | S3 API、预签名上传和下载 | 可作为 R2 的外部云备选，同样不是自有 NAS |
+
+### MinIO 结论修正
+
+不再把 MinIO Community 作为新部署的默认推荐。其官方 `minio/minio` GitHub 仓库已于 2026-04-25 归档，并明确标记“不再维护”和社区版改为源码分发。现有 MinIO 系统可以继续评估迁移成本，但本项目没有必要新建一个依赖已归档社区仓库的生产环境。
+
+### 推荐顺序
+
+1. **首选 PoC**：tusd + 普通 NAS 目录 + Worker + 签名下载接口。
+2. **需要 S3 标准时**：VersityGW + Worker。
+3. **NAS 没有稳定公网入口时**：Cloudflare R2 或 Backblaze B2。
+4. RustFS 作为新的自托管 S3 对照测试。
+5. Garage、SeaweedFS 只在未来出现多节点、异地复制或海量文件需求时考虑。
+
+官方资料：
+
+- [tusd 官方文档](https://tus.github.io/tusd/)
+- [tusd 本地磁盘后端](https://tus.github.io/tusd/storage-backends/local-disk/)
+- [tusd hooks 与长任务边界](https://tus.github.io/tusd/advanced-topics/hooks/)
+- [VersityGW 官方仓库](https://github.com/versity/versitygw)
+- [VersityGW POSIX 后端](https://github.com/versity/versitygw/wiki/POSIX-Backend)
+- [RustFS 官方仓库](https://github.com/rustfs/rustfs)
+- [Garage 官方镜像仓库](https://github.com/deuxfleurs-org/garage)
+- [SeaweedFS 官方仓库](https://github.com/seaweedfs/seaweedfs)
+- [Cloudflare R2 预签名 URL](https://developers.cloudflare.com/r2/api/s3/presigned-urls/)
+- [Backblaze B2 S3 API](https://www.backblaze.com/docs/cloud-storage-s3-compatible-api)
+- [MinIO 官方归档仓库](https://github.com/minio/minio)
+
+## 9. 安全要求
 
 - Gladia 和翻译模型密钥只保存在服务端/NAS Worker，不发送到浏览器。
 - 读取签名 URL 有短 TTL，且只允许读取一个对象；上传凭证不能读取或列出其他对象。
@@ -95,7 +152,7 @@ Vercel 只保存小型 JSON：job ID、对象编号、处理阶段、Gladia job 
 - 日志只记录对象 ID 和脱敏 URL，不记录签名查询串、API Key 或完整请求头。
 - 上传完成、任务完成和删除都使用幂等状态，网络重试不能重复提交付费转写。
 
-## 9. 实施步骤
+## 10. 实施步骤
 
 1. 确认 NAS 型号、系统、Docker 能力、公网域名、证书、上行带宽和磁盘目录。
 2. 建一个测试子域和隔离目录，完成短期写入凭证、只读签名 URL、删除接口。
@@ -107,7 +164,7 @@ Vercel 只保存小型 JSON：job ID、对象编号、处理阶段、Gladia job 
 8. 连续运行并监控容量、失败率、处理时长和删除闭环，通过后再切换默认路径。
 9. 保留 Vercel Blob 路径作为短期回滚入口，稳定后再删除旧实现。
 
-## 10. 验收标准
+## 11. 验收标准
 
 - 浏览器媒体请求不再进入 Vercel Blob，Vercel 仅保存小型任务与结果数据。
 - Gladia 能稳定读取 NAS 短期 URL，且 URL 过期后无法再次访问。
@@ -117,7 +174,7 @@ Vercel 只保存小型 JSON：job ID、对象编号、处理阶段、Gladia job 
 - iOS Safari、iOS Chrome 和 Windows 端均通过真实文件测试。
 - 任意外部 URL、私网 URL、跨对象删除和无签名上传均被拒绝。
 
-## 11. 实施前待确认
+## 12. 实施前待确认
 
 - NAS 品牌、操作系统和是否可运行 Docker；
 - 是否有固定公网 IP，或采用哪种 DDNS；
