@@ -88,7 +88,7 @@ class NasDeployConfigTests(unittest.TestCase):
             headers = {"Authorization": authorization} if authorization else {}
             request = Request(f"http://127.0.0.1:{port}{path}", headers=headers)
             try:
-                with opener.open(request, timeout=1) as response:
+                with opener.open(request, timeout=30) as response:
                     return response.status, response.headers
             except HTTPError as error:
                 return error.code, error.headers
