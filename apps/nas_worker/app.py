@@ -3,8 +3,10 @@ from __future__ import annotations
 import hmac
 import os
 import re
+import secrets
 import shutil
 import threading
+import time
 import traceback
 import unicodedata
 from dataclasses import dataclass
@@ -15,10 +17,12 @@ from flask import Flask, abort, jsonify, request, send_file
 
 from packages.shared_core import PipelineConfig, process_one
 
+from .cleanup import delete_job_media
 from .security import (
     TokenError,
     build_signed_media_url,
     decode_upload_token,
+    encode_upload_token,
     verify_media_signature,
 )
 from .store import JobStore
@@ -29,6 +33,9 @@ SUPPORTED_SUFFIXES = {
     ".m4a", ".mp3", ".wav", ".aac", ".flac", ".ogg", ".wma", ".m4b",
     ".mp4", ".mov", ".mkv", ".avi", ".wmv", ".flv", ".webm", ".m4v",
 }
+SUPPORTED_OUTPUT_FORMATS = {"txt", "srt"}
+SUPPORTED_SOURCE_LANGUAGES = {"auto", "en", "zh", "en_zh"}
+SUPPORTED_TRANSLATION_PROVIDERS = {"minimax", "glm", "qwen"}
 
 
 @dataclass(slots=True)
@@ -39,6 +46,7 @@ class WorkerSettings:
     proxy_token: str
     max_upload_bytes: int = 5 * 1024 * 1024 * 1024
     max_active_jobs: int = 4
+    upload_token_ttl_seconds: int = 24 * 60 * 60
     media_url_ttl_seconds: int = 24 * 60 * 60
     poll_interval: int = 8
     poll_max_iters: int = 900
@@ -52,6 +60,7 @@ class WorkerSettings:
             proxy_token=os.environ.get("VIDEO2TEXT_PROXY_TOKEN", ""),
             max_upload_bytes=int(os.environ.get("VIDEO2TEXT_MAX_UPLOAD_BYTES", 5 * 1024 * 1024 * 1024)),
             max_active_jobs=int(os.environ.get("VIDEO2TEXT_MAX_ACTIVE_JOBS", 4)),
+            upload_token_ttl_seconds=int(os.environ.get("VIDEO2TEXT_UPLOAD_TOKEN_TTL_SECONDS", 24 * 60 * 60)),
             media_url_ttl_seconds=int(os.environ.get("VIDEO2TEXT_MEDIA_URL_TTL_SECONDS", 24 * 60 * 60)),
             poll_interval=int(os.environ.get("VIDEO2TEXT_GLADIA_POLL_INTERVAL", 8)),
             poll_max_iters=int(os.environ.get("VIDEO2TEXT_GLADIA_POLL_MAX_ITERS", 900)),
@@ -73,6 +82,46 @@ def _safe_filename(value: str) -> str:
     if not name or Path(name).suffix.lower() not in SUPPORTED_SUFFIXES:
         raise ValueError("unsupported or missing media file extension")
     return name[:180]
+
+
+def _validated_ticket_request(body: dict[str, Any], settings: WorkerSettings) -> dict[str, Any]:
+    if not isinstance(body, dict):
+        raise ValueError("request body must be a JSON object")
+    file_name = _safe_filename(str(body.get("file_name") or ""))
+    raw_file_size = body.get("file_size")
+    if (
+        isinstance(raw_file_size, bool)
+        or not isinstance(raw_file_size, (int, float))
+        or not float(raw_file_size).is_integer()
+    ):
+        raise ValueError("file_size must be a positive integer")
+    file_size = int(raw_file_size)
+    if file_size <= 0 or file_size > settings.max_upload_bytes:
+        raise ValueError("file size is outside the configured limit")
+    content_type = str(body.get("content_type") or "application/octet-stream").strip()
+    if not content_type or len(content_type) > 200 or "\r" in content_type or "\n" in content_type:
+        raise ValueError("invalid content_type")
+    output_format = str(body.get("output_format") or "txt").strip().lower()
+    source_language = str(body.get("source_language") or "auto").strip().lower()
+    translation_provider = str(body.get("translation_provider") or "minimax").strip().lower()
+    translate = body.get("translate", True)
+    if output_format not in SUPPORTED_OUTPUT_FORMATS:
+        raise ValueError("output_format must be txt or srt")
+    if source_language not in SUPPORTED_SOURCE_LANGUAGES:
+        raise ValueError("unsupported source language mode")
+    if translation_provider not in SUPPORTED_TRANSLATION_PROVIDERS:
+        raise ValueError("unsupported translation provider")
+    if not isinstance(translate, bool):
+        raise ValueError("translate must be a boolean")
+    return {
+        "file_name": file_name,
+        "file_size": file_size,
+        "content_type": content_type,
+        "output_format": output_format,
+        "translate": translate,
+        "source_language": source_language,
+        "translation_provider": translation_provider,
+    }
 
 
 def _header_from_hook(body: dict[str, Any], name: str) -> str:
@@ -167,6 +216,12 @@ class QueueWorker:
                 translated=result.translated,
                 media_type=result.media_type,
             )
+            try:
+                completed_job = self.store.get(job_id) or job
+                removed = delete_job_media(completed_job, self.settings.data_root, self.store)
+                log(f"[cleanup] removed {removed} completed media path(s); result retained")
+            except Exception as cleanup_exc:  # noqa: BLE001
+                log(f"[cleanup] deferred completed-media cleanup: {cleanup_exc}")
         except Exception as exc:  # noqa: BLE001
             log(traceback.format_exc())
             self.store.fail(job_id, str(exc))
@@ -192,6 +247,7 @@ def create_app(settings: WorkerSettings | None = None, *, start_worker: bool = T
             abort(401)
 
     @app.get("/health")
+    @app.get("/api/health")
     def health():
         usage = shutil.disk_usage(settings.data_root)
         return jsonify(
@@ -202,6 +258,47 @@ def create_app(settings: WorkerSettings | None = None, *, start_worker: bool = T
                 "disk_used_percent": round(usage.used / usage.total * 100, 1),
             }
         )
+
+    @app.get("/api/capabilities")
+    def capabilities():
+        return jsonify(
+            {
+                "ok": True,
+                "ready": True,
+                "backend": "docker-nas",
+                "upload": {"protocol": "tus", "max_bytes": settings.max_upload_bytes},
+                "outputs": sorted(SUPPORTED_OUTPUT_FORMATS),
+                "source_languages": sorted(SUPPORTED_SOURCE_LANGUAGES),
+                "translation_providers": sorted(SUPPORTED_TRANSLATION_PROVIDERS),
+                "worker_concurrency": 1,
+            }
+        )
+
+    @app.post("/api/nas-ticket")
+    def nas_ticket():
+        try:
+            validated = _validated_ticket_request(request.get_json(silent=True) or {}, settings)
+            now = int(time.time())
+            payload = {
+                "version": 1,
+                "job_id": f"nas_{secrets.token_hex(6)}",
+                **validated,
+                "expires_at": now + settings.upload_token_ttl_seconds,
+                "nonce": secrets.token_hex(12),
+            }
+            return jsonify(
+                {
+                    "ok": True,
+                    "backend": "nas",
+                    "job_id": payload["job_id"],
+                    "job_url": f"/jobs/{payload['job_id']}",
+                    "upload_endpoint": f"{settings.public_origin}/files/",
+                    "upload_token": encode_upload_token(payload, settings.shared_secret),
+                    "expires_at": payload["expires_at"],
+                }
+            )
+        except (TokenError, ValueError, TypeError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
 
     @app.post("/hooks/tusd")
     def tusd_hook():
@@ -262,6 +359,26 @@ def create_app(settings: WorkerSettings | None = None, *, start_worker: bool = T
             return jsonify({})
 
         return jsonify({})
+
+    @app.get("/api/jobs-status")
+    def browser_job_status():
+        job_id = str(request.args.get("job_id") or "").strip()
+        if not JOB_ID_PATTERN.fullmatch(job_id):
+            return jsonify({"ok": False, "error": "invalid NAS job id"}), 400
+        payload = store.public_status(job_id)
+        if payload is None:
+            return jsonify({"ok": False, "error": "job not found"}), 404
+        return jsonify(payload)
+
+    @app.get("/api/jobs-result")
+    def browser_job_result():
+        job_id = str(request.args.get("job_id") or "").strip()
+        if not JOB_ID_PATTERN.fullmatch(job_id):
+            return jsonify({"ok": False, "error": "invalid NAS job id"}), 400
+        payload = store.public_result(job_id)
+        if payload is None:
+            return jsonify({"ok": False, "error": "result not ready"}), 404
+        return jsonify(payload)
 
     @app.get("/api/jobs/<job_id>")
     def job_status(job_id: str):

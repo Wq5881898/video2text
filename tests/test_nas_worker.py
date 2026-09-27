@@ -6,9 +6,11 @@ import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import urlsplit
+from unittest.mock import patch
 
-from apps.nas_worker.app import WorkerSettings, create_app
+from apps.nas_worker.app import QueueWorker, WorkerSettings, create_app
 from apps.nas_worker.cleanup import run_cleanup
 from apps.nas_worker.security import build_signed_media_url, encode_upload_token
 
@@ -57,6 +59,41 @@ class NasWorkerTests(unittest.TestCase):
                 "Upload": {"ID": upload_id, "Size": size},
             },
         }
+
+    def test_local_control_plane_issues_ticket_and_exposes_status(self):
+        response = self.client.post(
+            "/api/nas-ticket",
+            json={
+                "file_name": "recording.m4a",
+                "file_size": 4,
+                "content_type": "audio/mp4",
+                "output_format": "srt",
+                "translate": True,
+                "source_language": "auto",
+                "translation_provider": "minimax",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        ticket = response.get_json()
+        self.assertRegex(ticket["job_id"], r"^nas_[a-f0-9]{12}$")
+        self.assertEqual(ticket["upload_endpoint"], "https://upload.example.test/files/")
+        payload = self.ticket(job_id=ticket["job_id"])[0]
+        self.store.register_upload(payload, self.settings.max_active_jobs)
+        status = self.client.get(f"/api/jobs-status?job_id={ticket['job_id']}")
+        self.assertEqual(status.status_code, 200)
+        self.assertEqual(status.get_json()["status"], "uploading")
+
+    def test_local_ticket_rejects_invalid_input(self):
+        response = self.client.post(
+            "/api/nas-ticket",
+            json={"file_name": "malware.exe", "file_size": 4, "translate": False},
+        )
+        self.assertEqual(response.status_code, 400)
+        response = self.client.post(
+            "/api/nas-ticket",
+            json={"file_name": "audio.m4a", "file_size": 4, "translate": "false"},
+        )
+        self.assertEqual(response.status_code, 400)
 
     def test_tusd_hook_moves_completed_upload_and_queues_job(self):
         payload, token = self.ticket()
@@ -114,6 +151,59 @@ class NasWorkerTests(unittest.TestCase):
         self.assertEqual(response.status_code, 206)
         self.assertEqual(response.data, b"2345")
         response.close()
+
+    def test_worker_completion_immediately_removes_media_and_retains_result(self):
+        payload, _ = self.ticket()
+        self.store.register_upload(payload, self.settings.max_active_jobs)
+        media = self.root / "media" / payload["job_id"] / payload["file_name"]
+        media.parent.mkdir(parents=True)
+        media.write_bytes(b"test")
+        self.store.enqueue(payload["job_id"], "upload-1", media)
+        job = self.store.claim_next()
+        self.assertIsNotNone(job)
+
+        def fake_process(source_path, config, **_kwargs):
+            config.output_dir.mkdir(parents=True, exist_ok=True)
+            config.jobs_root.mkdir(parents=True, exist_ok=True)
+            (config.jobs_root / "checkpoint.json").write_text("{}", encoding="utf-8")
+            output = config.output_dir / "recording.txt"
+            output.write_text("transcript", encoding="utf-8")
+            return SimpleNamespace(output_path=output, translated=True, media_type="audio")
+
+        worker = QueueWorker(self.settings, self.store)
+        with patch("apps.nas_worker.app.process_one", side_effect=fake_process):
+            worker.process(job)
+
+        completed = self.store.get(payload["job_id"])
+        result = self.root / "results" / payload["job_id"] / "recording.txt"
+        self.assertEqual(completed["status"], "completed")
+        self.assertIsNotNone(completed["media_deleted_at"])
+        self.assertFalse(media.parent.exists())
+        self.assertFalse((self.root / "work" / payload["job_id"]).exists())
+        self.assertEqual(result.read_text(encoding="utf-8"), "transcript")
+
+    def test_cleanup_failure_does_not_change_completed_result_to_failed(self):
+        payload, _ = self.ticket()
+        self.store.register_upload(payload, self.settings.max_active_jobs)
+        media = self.root / "media" / payload["job_id"] / payload["file_name"]
+        media.parent.mkdir(parents=True)
+        media.write_bytes(b"test")
+        self.store.enqueue(payload["job_id"], "upload-1", media)
+        job = self.store.claim_next()
+
+        def fake_process(source_path, config, **_kwargs):
+            config.output_dir.mkdir(parents=True, exist_ok=True)
+            output = config.output_dir / "recording.txt"
+            output.write_text("transcript", encoding="utf-8")
+            return SimpleNamespace(output_path=output, translated=False, media_type="audio")
+
+        worker = QueueWorker(self.settings, self.store)
+        with (
+            patch("apps.nas_worker.app.process_one", side_effect=fake_process),
+            patch("apps.nas_worker.app.delete_job_media", side_effect=OSError("busy")),
+        ):
+            worker.process(job)
+        self.assertEqual(self.store.get(payload["job_id"])["status"], "completed")
 
     def test_cleanup_removes_expired_media_but_retains_result(self):
         payload, _ = self.ticket()

@@ -9561,7 +9561,7 @@ async function requestTicket(file, options) {
 }
 function isNasPreviewMode() {
   const params = new URLSearchParams(window.location.search);
-  return window.location.pathname === "/nas" || params.get("storage") === "nas";
+  return window.location.hostname === "stt.151077.xyz" || window.location.pathname === "/nas" || params.get("storage") === "nas";
 }
 async function uploadFileToNas(file, options) {
   const ticket = readSavedTicket(file) || await requestTicket(file, options);
@@ -9705,6 +9705,16 @@ function wireDropzone() {
   updateSelectedFileLabel();
   syncMutualExclusion("none");
 }
+function configureNasOnlyUi() {
+  if (!isNasPreviewMode()) return;
+  const urlCard = document.getElementById("url-card");
+  const sourceUrl = document.getElementById("source-url");
+  urlCard.hidden = true;
+  sourceUrl.value = "";
+  sourceUrl.disabled = true;
+  const returnLink = document.querySelector('.alt-mode-link[href="/"]');
+  if (returnLink) returnLink.href = "/nas";
+}
 function appendLog(message2) {
   const log2 = document.getElementById("transcribe-output");
   const stamp = (/* @__PURE__ */ new Date()).toLocaleTimeString();
@@ -9839,6 +9849,7 @@ async function submitMobileJob(event) {
 }
 document.getElementById("mobile-form").addEventListener("submit", submitMobileJob);
 wireDropzone();
+configureNasOnlyUi();
 /*! Bundled license information:
 
 is-buffer/index.js:

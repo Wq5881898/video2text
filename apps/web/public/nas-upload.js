@@ -62,7 +62,9 @@ async function requestTicket(file, options) {
 
 export function isNasPreviewMode() {
   const params = new URLSearchParams(window.location.search);
-  return window.location.pathname === "/nas" || params.get("storage") === "nas";
+  return window.location.hostname === "stt.151077.xyz"
+    || window.location.pathname === "/nas"
+    || params.get("storage") === "nas";
 }
 
 export async function uploadFileToNas(file, options) {

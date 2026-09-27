@@ -450,6 +450,17 @@ function wireDropzone() {
   syncMutualExclusion("none");
 }
 
+function configureNasOnlyUi() {
+  if (!isNasPreviewMode()) return;
+  const urlCard = document.getElementById("url-card");
+  const sourceUrl = document.getElementById("source-url");
+  urlCard.hidden = true;
+  sourceUrl.value = "";
+  sourceUrl.disabled = true;
+  const mobileLink = document.querySelector('.alt-mode-link[href="/mobile"]');
+  if (mobileLink) mobileLink.href = "/mobile?storage=nas";
+}
+
 document
   .getElementById("refresh-status")
   .addEventListener("click", refreshStatus);
@@ -460,6 +471,7 @@ document
   .getElementById("download-result")
   .addEventListener("click", downloadLastResult);
 wireDropzone();
+configureNasOnlyUi();
 if (isNasPreviewMode()) {
   document.querySelector(".eyebrow").textContent = "video2text NAS preview";
 }

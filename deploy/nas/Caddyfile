@@ -1,3 +1,56 @@
+{$VIDEO2TEXT_WEB_HOST} {
+    encode zstd gzip
+
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        X-Frame-Options "DENY"
+    }
+
+    basic_auth {
+        {$VIDEO2TEXT_WEB_USER} {$VIDEO2TEXT_WEB_PASSWORD_HASH}
+    }
+
+    @control path /api/*
+    handle @control {
+        reverse_proxy worker:8080
+    }
+
+    @jobs path /jobs/*
+    handle @jobs {
+        root * /srv/video2text-web
+        rewrite * /job.html
+        file_server
+    }
+
+    @nas path /nas
+    handle @nas {
+        root * /srv/video2text-web
+        rewrite * /index.html
+        file_server
+    }
+
+    @mobile path /mobile
+    handle @mobile {
+        root * /srv/video2text-web
+        rewrite * /mobile.html
+        file_server
+    }
+
+    redir / /nas 302
+
+    handle {
+        root * /srv/video2text-web
+        file_server
+    }
+
+    log {
+        output stdout
+        format json
+    }
+}
+
 {$VIDEO2TEXT_PUBLIC_HOST} {
     encode zstd gzip
 
@@ -8,12 +61,49 @@
     }
 
     @uploads path /files /files/*
-    reverse_proxy @uploads tusd:8080
+    handle @uploads {
+        reverse_proxy tusd:8080
+    }
 
-    @worker path /health /api/* /media/*
-    reverse_proxy @worker worker:8080
+    @media path /media/*
+    handle @media {
+        reverse_proxy worker:8080
+    }
 
-    respond 404
+    @health path /health
+    handle @health {
+        reverse_proxy worker:8080
+    }
+
+    handle {
+        respond 404
+    }
+
+    log {
+        output stdout
+        format json
+    }
+}
+
+http://:8081 {
+    @sub2api {
+        path /v1/* /v1beta/* /backend-api/codex/* /responses /responses/* /models /models/* /chat/completions /messages/count_tokens /alpha/search /embeddings
+    }
+
+    handle @sub2api {
+        reverse_proxy {$VIDEO2TEXT_SUB2API_UPSTREAM} {
+            flush_interval -1
+            header_up X-Forwarded-Proto https
+            transport http {
+                read_timeout 3600s
+                write_timeout 3600s
+            }
+        }
+    }
+
+    handle {
+        respond 404
+    }
 
     log {
         output stdout

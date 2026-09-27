@@ -32,12 +32,18 @@ services:
     restart: unless-stopped
     environment:
       VIDEO2TEXT_PUBLIC_HOST: ${VIDEO2TEXT_PUBLIC_HOST:?Set VIDEO2TEXT_PUBLIC_HOST in .env}
+      VIDEO2TEXT_WEB_HOST: ${VIDEO2TEXT_WEB_HOST:?Set VIDEO2TEXT_WEB_HOST in .env}
+      VIDEO2TEXT_WEB_USER: ${VIDEO2TEXT_WEB_USER:?Set VIDEO2TEXT_WEB_USER in .env}
+      VIDEO2TEXT_WEB_PASSWORD_HASH: ${VIDEO2TEXT_WEB_PASSWORD_HASH:?Set VIDEO2TEXT_WEB_PASSWORD_HASH in .env}
+      VIDEO2TEXT_SUB2API_UPSTREAM: ${VIDEO2TEXT_SUB2API_UPSTREAM:-10.0.0.218:8080}
     ports:
       - "80:80"
       - "443:443"
       - "443:443/udp"
+      - "127.0.0.1:8081:8081"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../../apps/web/public:/srv/video2text-web:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
@@ -61,7 +67,7 @@ services:
       - -disable-termination
       - -disable-concatenation
       - -max-size=${VIDEO2TEXT_MAX_UPLOAD_BYTES:-5368709120}
-      - -cors-allow-origin=${VIDEO2TEXT_WEB_ORIGIN_REGEX:-https://web-iota-one-31.vercel.app}
+      - -cors-allow-origin=${VIDEO2TEXT_WEB_ORIGIN_REGEX:-https://stt\.151077\.xyz}
       - -cors-allow-headers=X-Upload-Token
       - -cors-max-age=3600
       - -hooks-http=http://worker:8080/hooks/tusd

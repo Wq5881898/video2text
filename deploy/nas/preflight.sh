@@ -23,6 +23,11 @@ set +a
 required=(
   VIDEO2TEXT_PUBLIC_HOST
   VIDEO2TEXT_PUBLIC_ORIGIN
+  VIDEO2TEXT_WEB_HOST
+  VIDEO2TEXT_WEB_ORIGIN
+  VIDEO2TEXT_WEB_USER
+  VIDEO2TEXT_WEB_PASSWORD_HASH
+  VIDEO2TEXT_SUB2API_UPSTREAM
   VIDEO2TEXT_STORAGE_MOUNT
   VIDEO2TEXT_DATA_DIR
   VIDEO2TEXT_CONFIG_DIR
@@ -34,10 +39,16 @@ for name in "${required[@]}"; do
 done
 
 [[ "$VIDEO2TEXT_PUBLIC_ORIGIN" == https://* ]] || fail "VIDEO2TEXT_PUBLIC_ORIGIN must use HTTPS"
+[[ "$VIDEO2TEXT_WEB_ORIGIN" == https://* ]] || fail "VIDEO2TEXT_WEB_ORIGIN must use HTTPS"
 [[ "$VIDEO2TEXT_SHARED_SECRET" != replace-* ]] || fail "replace VIDEO2TEXT_SHARED_SECRET"
 [[ "$VIDEO2TEXT_PROXY_TOKEN" != replace-* ]] || fail "replace VIDEO2TEXT_PROXY_TOKEN"
+[[ "$VIDEO2TEXT_WEB_PASSWORD_HASH" != replace-* ]] || fail "replace VIDEO2TEXT_WEB_PASSWORD_HASH"
 ((${#VIDEO2TEXT_SHARED_SECRET} >= 32)) || fail "VIDEO2TEXT_SHARED_SECRET must be at least 32 characters"
 ((${#VIDEO2TEXT_PROXY_TOKEN} >= 32)) || fail "VIDEO2TEXT_PROXY_TOKEN must be at least 32 characters"
+
+env_mode=$(stat -c '%a' .env)
+[[ "$env_mode" == "600" || "$env_mode" == "400" ]] \
+  || fail ".env permissions must be 600 or 400 (found $env_mode)"
 
 storage_mount=$(realpath -m "$VIDEO2TEXT_STORAGE_MOUNT")
 data_dir=$(realpath -m "$VIDEO2TEXT_DATA_DIR")
@@ -54,7 +65,6 @@ done
 test -d "$VIDEO2TEXT_CONFIG_DIR" || fail "missing directory: $VIDEO2TEXT_CONFIG_DIR"
 [[ "$(stat -c '%u' "$VIDEO2TEXT_CONFIG_DIR")" == "1000" ]] \
   || fail "$VIDEO2TEXT_CONFIG_DIR must be owned by UID 1000 so the Worker can read it"
-test -w "$VIDEO2TEXT_DATA_DIR/uploads" || fail "uploads directory is not writable by the current user"
 
 source_device=$(stat -c '%d' "$VIDEO2TEXT_DATA_DIR/uploads")
 target_device=$(stat -c '%d' "$VIDEO2TEXT_DATA_DIR/media")

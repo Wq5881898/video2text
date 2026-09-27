@@ -28,7 +28,7 @@ def _safe_remove_tree(path: Path, root: Path) -> bool:
     return True
 
 
-def _delete_job_media(job: dict, data_root: Path, store: JobStore) -> int:
+def delete_job_media(job: dict, data_root: Path, store: JobStore) -> int:
     deleted = 0
     media_root = data_root / "media"
     # The job directory is deterministic, so cleanup still works if tusd moved
@@ -74,14 +74,14 @@ def run_cleanup(
     removed_jobs = []
     removed_paths = 0
     for job in store.cleanup_candidates(cutoff):
-        removed_paths += _delete_job_media(job, data_root, store)
+        removed_paths += delete_job_media(job, data_root, store)
         removed_jobs.append(job["job_id"])
 
     usage = shutil.disk_usage(data_root)
     for job in store.cleanup_candidates(cutoff, ignore_cutoff=True):
         if usage.used / usage.total * 100 < high_water_percent:
             break
-        removed_paths += _delete_job_media(job, data_root, store)
+        removed_paths += delete_job_media(job, data_root, store)
         removed_jobs.append(job["job_id"])
         usage = shutil.disk_usage(data_root)
 

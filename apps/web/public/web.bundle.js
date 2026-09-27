@@ -9561,7 +9561,7 @@ async function requestTicket(file, options) {
 }
 function isNasPreviewMode() {
   const params = new URLSearchParams(window.location.search);
-  return window.location.pathname === "/nas" || params.get("storage") === "nas";
+  return window.location.hostname === "stt.151077.xyz" || window.location.pathname === "/nas" || params.get("storage") === "nas";
 }
 async function uploadFileToNas(file, options) {
   const ticket = readSavedTicket(file) || await requestTicket(file, options);
@@ -10024,10 +10024,21 @@ function wireDropzone() {
   updateSelectedFileLabel();
   syncMutualExclusion("none");
 }
+function configureNasOnlyUi() {
+  if (!isNasPreviewMode()) return;
+  const urlCard = document.getElementById("url-card");
+  const sourceUrl = document.getElementById("source-url");
+  urlCard.hidden = true;
+  sourceUrl.value = "";
+  sourceUrl.disabled = true;
+  const mobileLink = document.querySelector('.alt-mode-link[href="/mobile"]');
+  if (mobileLink) mobileLink.href = "/mobile?storage=nas";
+}
 document.getElementById("refresh-status").addEventListener("click", refreshStatus);
 document.getElementById("transcribe-form").addEventListener("submit", submitPlaceholder);
 document.getElementById("download-result").addEventListener("click", downloadLastResult);
 wireDropzone();
+configureNasOnlyUi();
 if (isNasPreviewMode()) {
   document.querySelector(".eyebrow").textContent = "video2text NAS preview";
 }

@@ -111,6 +111,17 @@ function wireDropzone() {
   syncMutualExclusion("none");
 }
 
+function configureNasOnlyUi() {
+  if (!isNasPreviewMode()) return;
+  const urlCard = document.getElementById("url-card");
+  const sourceUrl = document.getElementById("source-url");
+  urlCard.hidden = true;
+  sourceUrl.value = "";
+  sourceUrl.disabled = true;
+  const returnLink = document.querySelector('.alt-mode-link[href="/"]');
+  if (returnLink) returnLink.href = "/nas";
+}
+
 function appendLog(message) {
   const log = document.getElementById("transcribe-output");
   const stamp = new Date().toLocaleTimeString();
@@ -262,3 +273,4 @@ document
   .getElementById("mobile-form")
   .addEventListener("submit", submitMobileJob);
 wireDropzone();
+configureNasOnlyUi();
