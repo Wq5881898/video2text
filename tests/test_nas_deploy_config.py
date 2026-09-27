@@ -37,6 +37,11 @@ class NasDeployConfigTests(unittest.TestCase):
         self.assertIn("VIDEO2TEXT_PUBLIC_HOST=upload.151077.xyz", environment)
         self.assertIn("VIDEO2TEXT_SUB2API_UPSTREAM=10.0.0.218:8080", environment)
 
+    def test_tusd_hook_backoff_uses_go_duration_syntax(self):
+        compose = (REPO_ROOT / "deploy/nas/compose.yaml").read_text(encoding="utf-8")
+        self.assertIn("-hooks-http-backoff=2s", compose)
+        self.assertNotIn("-hooks-http-backoff=2\n", compose)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -73,7 +73,7 @@ services:
       - -hooks-http=http://worker:8080/hooks/tusd
       - -hooks-http-forward-headers=X-Upload-Token
       - -hooks-http-retry=5
-      - -hooks-http-backoff=2
+      - -hooks-http-backoff=2s
       - -hooks-enabled-events=pre-create,post-receive,post-finish
       - -progress-hooks-interval=60s
       - -log-format=json
