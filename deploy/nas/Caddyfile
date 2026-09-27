@@ -8,41 +8,44 @@
         X-Frame-Options "DENY"
     }
 
-    basic_auth {
-        {$VIDEO2TEXT_WEB_USER} {$VIDEO2TEXT_WEB_PASSWORD_HASH}
-    }
-
     @control path /api/*
-    handle @control {
-        reverse_proxy worker:8080
-    }
-
     @jobs path /jobs/*
-    handle @jobs {
-        root * /srv/video2text-web
-        rewrite * /job.html
-        file_server
-    }
-
     @nas path /nas
-    handle @nas {
-        root * /srv/video2text-web
-        rewrite * /index.html
-        file_server
-    }
-
     @mobile path /mobile
-    handle @mobile {
-        root * /srv/video2text-web
-        rewrite * /mobile.html
-        file_server
-    }
 
-    redir / /nas 302
+    route {
+        basic_auth {
+            {$VIDEO2TEXT_WEB_USER} {$VIDEO2TEXT_WEB_PASSWORD_HASH}
+        }
 
-    handle {
-        root * /srv/video2text-web
-        file_server
+        redir / /nas 302
+
+        handle @control {
+            reverse_proxy worker:8080
+        }
+
+        handle @jobs {
+            root * /srv/video2text-web
+            rewrite * /job.html
+            file_server
+        }
+
+        handle @nas {
+            root * /srv/video2text-web
+            rewrite * /index.html
+            file_server
+        }
+
+        handle @mobile {
+            root * /srv/video2text-web
+            rewrite * /mobile.html
+            file_server
+        }
+
+        handle {
+            root * /srv/video2text-web
+            file_server
+        }
     }
 
     log {
