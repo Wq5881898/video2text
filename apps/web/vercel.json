@@ -5,6 +5,7 @@
   "builds": [
     { "src": "api/blob-upload.js", "use": "@vercel/node" },
     { "src": "api/blob-release.js", "use": "@vercel/node" },
+    { "src": "api/nas-ticket.js", "use": "@vercel/node" },
     { "src": "api/jobs-create.js", "use": "@vercel/node" },
     { "src": "api/jobs-continue.js", "use": "@vercel/node", "config": { "maxDuration": 300 } },
     { "src": "api/media-info.js", "use": "@vercel/node" },
@@ -18,6 +19,7 @@
   "routes": [
     { "src": "/api/blob-upload", "dest": "api/blob-upload.js" },
     { "src": "/api/blob-release", "dest": "api/blob-release.js" },
+    { "src": "/api/nas-ticket", "dest": "api/nas-ticket.js" },
     { "src": "/api/jobs-create", "dest": "api/jobs-create.js" },
     { "src": "/api/jobs-continue", "dest": "api/jobs-continue.js" },
     { "src": "/api/media-info", "dest": "api/media-info.js" },
@@ -27,6 +29,7 @@
     { "src": "/api/capabilities", "dest": "api/capabilities.py" },
     { "src": "/api/transcribe", "dest": "api/transcribe.py" },
     { "src": "/mobile", "dest": "public/mobile.html" },
+    { "src": "/nas", "dest": "public/index.html" },
     { "src": "/jobs/(.*)", "dest": "public/job.html" },
     { "src": "/(.*)", "dest": "public/$1" }
   ]

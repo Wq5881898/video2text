@@ -1,6 +1,6 @@
 # video2text 当前开发状态
 
-> 基线日期：2026-09-23
+> 基线日期：2026-09-25
 > 作用：记录已经落地并由当前代码支持的功能。研究设想和未来计划不算作已完成功能。
 
 ## 1. 产品总览
@@ -67,12 +67,14 @@ Web 端生产环境：
 
 真实密钥不应进入 Git。桌面打包时配置会复制到发布目录，发布包必须按敏感文件保管。
 
+NAS 灰度版代码已完成但尚未部署：`/nas` 通过 tusd 断点续传到 Ubuntu，单线程 Worker 使用 SQLite 保存状态，向 Gladia 提供短期签名读取 URL，媒体保留 7 天并由本地 systemd timer 每天清理。普通生产入口仍使用 Vercel Blob。
+
 ## 5. 当前验证
 
-2026-09-23 本地验证结果：
+2026-09-25 本地验证结果：
 
-- Python `unittest`：35 项通过；
-- Web Node tests：45 项通过；
+- Python `unittest`：44 项通过；
+- Web Node tests：48 项通过；
 - Node 测试包含真实生成 12,309 秒静音音频、切成两段、合并全局时间轴并删除临时分段；
 - 生产 `/api/health` 返回 `status=ready`；
 - 生产 `/api/capabilities` 检测 Blob、Gladia、MiniMax 已配置。
@@ -87,7 +89,7 @@ Web 端生产环境：
 - Web 只支持 MiniMax，尚未提供桌面端的 GLM/Qwen 选择。
 - 桌面 CLI 暂未暴露源语言和翻译模型参数，使用默认 Auto + MiniMax；完整选择在 GUI。
 - `outputs/work/run_all_win.py` 等历史批处理仍使用 DeepL。它们不是当前桌面 GUI/Web 产品翻译路径。
-- NAS 直传、短期签名读取 URL 和 Gladia 直接拉取仍处于下一阶段预研，尚未实施。详见 `NAS_MEDIA_STORAGE_PLAN_ZH.md`。
+- NAS 直传、短期签名读取 URL、单线程任务队列和本地生命周期清理已实现为灰度版，但尚未在 Ubuntu、公网域名、iOS 和真实 Gladia 文件上完成部署验收。详见 `NAS_MEDIA_STORAGE_PLAN_ZH.md`。
 - Ubuntu + Cloudflare Tunnel + R2 是另一份备选预研方案，尚未实施。
 
 ## 7. 后续候选事项

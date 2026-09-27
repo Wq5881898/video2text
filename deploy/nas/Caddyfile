@@ -1,0 +1,22 @@
+{$VIDEO2TEXT_PUBLIC_HOST} {
+    encode zstd gzip
+
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+    }
+
+    @uploads path /files /files/*
+    reverse_proxy @uploads tusd:8080
+
+    @worker path /health /api/* /media/*
+    reverse_proxy @worker worker:8080
+
+    respond 404
+
+    log {
+        output stdout
+        format json
+    }
+}

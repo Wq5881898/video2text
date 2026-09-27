@@ -6,7 +6,7 @@ const vm = require("node:vm");
 
 async function frontend(responses) {
   const raw = await fs.readFile(path.join(__dirname, "../public/web.js"), "utf8");
-  const source = raw.replace(/^import[^\n]+\n/, "").split(/\r?\ndocument\r?\n/)[0];
+  const source = raw.replace(/^import[^\n]+\n/gm, "").split(/\r?\ndocument\r?\n/)[0];
   const calls = [];
   const redirects = [];
   const elements = new Map();
@@ -97,5 +97,9 @@ test("root and deployed frontend code remain identical", async () => {
   assert.equal(
     await fs.readFile(path.join(__dirname, "../web.js"), "utf8"),
     await fs.readFile(path.join(__dirname, "../public/web.js"), "utf8"),
+  );
+  assert.equal(
+    await fs.readFile(path.join(__dirname, "../nas-upload.js"), "utf8"),
+    await fs.readFile(path.join(__dirname, "../public/nas-upload.js"), "utf8"),
   );
 });

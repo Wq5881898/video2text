@@ -1,0 +1,11 @@
+[Unit]
+Description=Run video2text media lifecycle cleanup daily
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+RandomizedDelaySec=15m
+Unit=video2text-cleanup.service
+
+[Install]
+WantedBy=timers.target

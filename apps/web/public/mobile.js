@@ -1,4 +1,5 @@
 import { upload as uploadToBlob } from "@vercel/blob/client";
+import { isNasPreviewMode, uploadFileToNas } from "./nas-upload.js";
 
 const UPLOAD_STALL_TIMEOUT_MS = 45_000;
 const UPLOAD_ATTEMPTS = 2;
@@ -191,6 +192,24 @@ async function submitMobileJob(event) {
   try {
     let payload;
     if (sourceFile) {
+      if (isNasPreviewMode()) {
+        showProgress(`Preparing resumable NAS upload for ${sourceFile.name}.`);
+        const ticket = await uploadFileToNas(sourceFile, {
+          outputFormat,
+          translate,
+          onResume() {
+            showProgress("Resuming the previous NAS upload.");
+          },
+          onProgress(progress) {
+            showProgress(
+              `Uploading directly to NAS: ${Math.round(progress.percentage)}% (${progress.bytesUploaded}/${progress.bytesTotal})`,
+            );
+          },
+        });
+        showProgress(`Upload complete. Redirecting to ${ticket.job_url}.`);
+        window.location.href = ticket.job_url;
+        return;
+      }
       showProgress(`Preparing upload for ${sourceFile.name} (${sourceFile.size} bytes).`);
       const blob = await uploadFileWithRetry(sourceFile);
       showProgress(`Upload complete. Blob URL received for ${sourceFile.name}.`);

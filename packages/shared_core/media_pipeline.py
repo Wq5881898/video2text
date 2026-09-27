@@ -79,6 +79,8 @@ class PipelineConfig:
     poll_interval: int = 8
     poll_max_iters: int = 90
     max_audio_seconds: float = MAX_AUDIO_SECONDS
+    gladia_audio_url_factory: Callable[[Path], str] | None = None
+    retain_generated_media: bool = False
 
 
 @dataclass(slots=True)
@@ -507,8 +509,12 @@ def _fetch_audio_transcript(
         languages, code_switching = language_config_for_mode(config.source_language)
         while True:
             try:
-                report("Uploading audio")
-                audio_url = g.upload(rotator, src=media_path)
+                if config.gladia_audio_url_factory is None:
+                    report("Uploading audio")
+                    audio_url = g.upload(rotator, src=media_path)
+                else:
+                    report("Creating signed audio URL")
+                    audio_url = config.gladia_audio_url_factory(media_path)
                 report("Submitting transcription")
                 job_id = g.transcribe(rotator, audio_url, languages=languages, code_switching=code_switching)
                 break
@@ -744,8 +750,11 @@ def process_one(
         log=log,
         stage_callback=stage_callback,
     )
-    cleanup_intermediate_audio(media_type, media_path, job_dir, log=log)
-    cleanup_audio_parts(job_dir, log=log)
+    if config.retain_generated_media:
+        log("[cleanup] generated media retained for lifecycle cleanup")
+    else:
+        cleanup_intermediate_audio(media_type, media_path, job_dir, log=log)
+        cleanup_audio_parts(job_dir, log=log)
     stage_callback(source_path, "done", f"Created {output_path.name}")
     return PipelineResult(
         source_path=source_path,

@@ -21,6 +21,8 @@ The cloud side is intentionally simple:
 - no batch task queue to manage
 - no multi-task orchestration
 
+An opt-in `/nas` preview uses a DNS-only Caddy/tusd endpoint and the Ubuntu Worker under `apps/nas_worker`. The normal `/` route remains on Vercel Blob until real-device NAS tests pass.
+
 ## Boundaries
 
 - desktop packaging does not depend on `apps/web`
@@ -77,8 +79,8 @@ Verified on September 22, 2026:
 - `GET /api/capabilities`
 - production health reports `ready`
 - Blob, Gladia, and MiniMax configuration are present
-- local Python tests: 35 passed
-- web Node tests: 45 passed, including real FFmpeg splitting of a generated 12,309-second fixture
+- local Python tests: 44 passed
+- web Node tests: 48 passed, including real FFmpeg splitting of a generated 12,309-second fixture
 
 `/api/capabilities` is a basic environment probe. Its current `sync-direct` description does not enumerate the newer background-job, checkpoint, long-audio, and cleanup paths; this README and `CURRENT_STATE_ZH.md` are the complete product specification.
 
@@ -97,11 +99,18 @@ Verified on September 22, 2026:
 - `MINIMAX_BASE_URL` and `MINIMAX_MODEL` are optional overrides
 - `BLOB_READ_WRITE_TOKEN`
 
+NAS preview variables (disabled unless `NAS_PREVIEW_ENABLED=true`):
+
+- `NAS_UPLOAD_ENDPOINT`, for example `https://upload.151077.xyz/files/`
+- `NAS_API_BASE`, for example `https://upload.151077.xyz`
+- `NAS_SHARED_SECRET` and `NAS_PROXY_TOKEN`, both separate random values of at least 32 characters
+- optional `NAS_MAX_UPLOAD_BYTES`
+
 ## Tests
 
 ```powershell
 cd D:\projectQ\video2text\apps\web
-node --test api/*.test.js
+npm test
 ```
 
 The default suite mocks paid provider calls. The real-FFmpeg long-audio test generates its own silent fixture and verifies split cleanup. Use `npm run test:cloud` only when intentionally testing deployed services and accepting remote API usage.
@@ -130,6 +139,8 @@ The default suite mocks paid provider calls. The real-FFmpeg long-audio test gen
 - 一次返回一个结果
 - 不做需要用户管理的批量任务队列
 - 不做复杂批处理
+
+可选的 `/nas` 灰度入口通过 DNS-only 的 Caddy/tusd 直传 Ubuntu Worker。普通 `/` 入口继续使用 Vercel Blob，真实设备验证通过前不会切换默认路径。
 
 ## 边界
 
@@ -174,14 +185,14 @@ http://127.0.0.1:3100/
 
 ## 当前验证状态
 
-已在 2026 年 9 月 23 日验证：
+已在 2026 年 9 月 25 日验证：
 
 - `GET /api/health`
 - `GET /api/capabilities`
 - 生产健康状态为 `ready`
 - Blob、Gladia、MiniMax 环境配置存在
-- Python 本地测试 35 项通过
-- Web Node 测试 45 项通过，包含真实生成并切分 12,309 秒静音音频
+- Python 本地测试 44 项通过
+- Web Node 测试 48 项通过，包含真实生成并切分 12,309 秒静音音频
 
 `/api/capabilities` 目前是基础环境探针，其中的 `sync-direct` 摘要尚未完整列出后台任务、断点、长音频和清理路径；完整规格以本文及 `CURRENT_STATE_ZH.md` 为准。
 
@@ -199,11 +210,13 @@ http://127.0.0.1:3100/
 - `MINIMAX_API_KEY`
 - `BLOB_READ_WRITE_TOKEN`
 
+NAS 灰度环境变量：`NAS_PREVIEW_ENABLED=true`、`NAS_UPLOAD_ENDPOINT`、`NAS_API_BASE`、`NAS_SHARED_SECRET`、`NAS_PROXY_TOKEN`，可选 `NAS_MAX_UPLOAD_BYTES`。服务端部署说明见 [`../../deploy/nas/README.md`](../../deploy/nas/README.md)。
+
 ## 测试
 
 ```powershell
 cd D:\projectQ\video2text\apps\web
-node --test api/*.test.js
+npm test
 ```
 
 默认测试会模拟付费服务调用；真实 FFmpeg 长音频测试自行生成静音样本并验证临时分段删除。只有明确接受远端 API 消耗时才运行 `npm run test:cloud`。

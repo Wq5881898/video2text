@@ -1,0 +1,9 @@
+[Unit]
+Description=video2text NAS media lifecycle cleanup
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/video2text/deploy/nas
+ExecStart=/usr/bin/docker compose --profile maintenance run --rm cleanup

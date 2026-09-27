@@ -10,6 +10,7 @@
 - Desktop: local batch queue, API key management, streaming MiniMax / GLM / Qwen translation, and automatic long-audio splitting.
 - Web 端：Vercel 生产部署，单文件或单 URL、Safari/mobile 后台任务、固定 Job URL、长音频断点续跑。
 - Web: production Vercel deployment with one file or URL per task, Safari/mobile background jobs, persistent job URLs, and resumable long-audio processing.
+- NAS 预览版：Caddy + tusd + Ubuntu 单线程 Worker 已完成代码与本地测试，部署前不会替换现有生产入口。
 - 当前生产 Web 地址：[https://web-iota-one-31.vercel.app](https://web-iota-one-31.vercel.app)
 - Windows 正式版：[v0.1.0 Release](https://github.com/Wq5881898/video2text/releases/tag/v0.1.0)
 - 权威开发状态见 [`docs/CURRENT_STATE_ZH.md`](docs/CURRENT_STATE_ZH.md)。
@@ -97,7 +98,7 @@ Web 端刻意保持“一次输入、一个结果”，不提供桌面端式批�
 - Web 翻译当前固定使用 MiniMax M3；
 - 转写与结果生成成功后立即删除原始上传媒体；每次开始新上传时，再清理超过 48 小时的失败或遗留媒体。job 状态和结果不属于媒体清理范围，不依赖 Vercel Cron。
 
-Web 详细说明见 [`apps/web/README.md`](apps/web/README.md)。NAS 直传与 Gladia URL 拉取的下一阶段方案见 [`docs/NAS_MEDIA_STORAGE_PLAN_ZH.md`](docs/NAS_MEDIA_STORAGE_PLAN_ZH.md)；R2/Ubuntu 备选预研见 [`docs/CLOUD_STORAGE_ALTERNATIVE_ZH.md`](docs/CLOUD_STORAGE_ALTERNATIVE_ZH.md)。
+Web 详细说明见 [`apps/web/README.md`](apps/web/README.md)。NAS 直传与 Gladia URL 拉取的预览实现见 [`deploy/nas/README.md`](deploy/nas/README.md)，架构与迁移计划见 [`docs/NAS_MEDIA_STORAGE_PLAN_ZH.md`](docs/NAS_MEDIA_STORAGE_PLAN_ZH.md)；R2/Ubuntu 备选预研见 [`docs/CLOUD_STORAGE_ALTERNATIVE_ZH.md`](docs/CLOUD_STORAGE_ALTERNATIVE_ZH.md)。
 
 ## 输入输出 | Input And Output
 
@@ -165,7 +166,7 @@ vercel --prod
 ```powershell
 D:\projectQ\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"
 cd apps\web
-node --test api/*.test.js
+npm test
 ```
 
 真实云端 smoke test 和 Gladia 调用可能消耗远端配额，不属于默认单元测试。

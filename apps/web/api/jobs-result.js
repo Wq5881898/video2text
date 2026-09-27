@@ -1,4 +1,5 @@
 const { jobResultPath, readJson } = require("./jobs-lib");
+const { NAS_JOB_PATTERN, proxyNasJob } = require("./nas-lib");
 
 module.exports = async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store, max-age=0");
@@ -10,6 +11,12 @@ module.exports = async function handler(req, res) {
   const jobId = String(req.query.job_id || "").trim();
   if (!jobId) {
     res.status(400).json({ ok: false, error: "job_id is required" });
+    return;
+  }
+
+  if (NAS_JOB_PATTERN.test(jobId)) {
+    const response = await proxyNasJob(jobId, "/result");
+    res.status(response.status).json(response.payload);
     return;
   }
 

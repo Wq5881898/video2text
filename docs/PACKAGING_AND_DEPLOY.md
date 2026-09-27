@@ -1,6 +1,6 @@
 # Packaging And Deploy
 
-> Updated: 2026-09-22
+> Updated: 2026-09-25
 
 ## Desktop Packaging
 
@@ -138,7 +138,7 @@ cd D:\projectQ\video2text
 D:\projectQ\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"
 
 cd apps\web
-node --test api/*.test.js
+npm test
 ```
 
 Production read-only probes:
@@ -151,6 +151,20 @@ curl.exe https://web-iota-one-31.vercel.app/api/capabilities
 `/api/capabilities` currently reports basic sync/environment capability only; it is not a complete inventory of durable jobs and long-audio behavior.
 
 Run `npm run test:cloud` only when a real deployed smoke test is intended, because it can use Blob and provider resources.
+
+## NAS Preview Deploy
+
+The opt-in NAS data plane is under `deploy/nas/`. It keeps the existing Vercel path intact and adds `/nas` for staged testing. On Ubuntu, mount the shared application data disk at `/srv/app-data`, prepare the isolated `/srv/app-data/video2text` child directory, copy `deploy/nas/.env.example` to `.env`, then run:
+
+```bash
+cd /opt/video2text/deploy/nas
+bash preflight.sh
+docker compose build worker
+docker compose up -d
+curl --fail https://upload.151077.xyz/health
+```
+
+Configure the matching Vercel variables only after the public health check succeeds: `NAS_PREVIEW_ENABLED=true`, `NAS_UPLOAD_ENDPOINT`, `NAS_API_BASE`, `NAS_SHARED_SECRET`, and `NAS_PROXY_TOKEN`. The upload hostname must be Cloudflare DNS-only, not Tunnel/orange-cloud. Install the supplied systemd timer for daily seven-day media cleanup. Full instructions are in `deploy/nas/README.md`.
 
 ## Separation Checklist
 

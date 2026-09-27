@@ -15,7 +15,10 @@
           !/CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo/i.test(userAgent);
 
         if (isAppleMobile && isSafari) {
-          window.location.replace(`/mobile${window.location.search}${window.location.hash}`);
+          const params = new URLSearchParams(window.location.search);
+          if (window.location.pathname === "/nas") params.set("storage", "nas");
+          const query = params.toString();
+          window.location.replace(`/mobile${query ? `?${query}` : ""}${window.location.hash}`);
         }
       })();
     </script>
@@ -144,6 +147,6 @@
       </details>
     </main>
 
-    <script type="module" src="./web.js"></script>
+    <script type="module" src="./web.bundle.js"></script>
   </body>
 </html>

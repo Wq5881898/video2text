@@ -1,4 +1,5 @@
-import { upload as uploadToBlob } from "https://esm.sh/@vercel/blob/client?bundle";
+import { upload as uploadToBlob } from "@vercel/blob/client";
+import { isNasPreviewMode, uploadFileToNas } from "./nas-upload.js";
 
 async function fetchJson(url, options) {
   const response = await fetch(url, options);
@@ -231,6 +232,37 @@ async function submitPlaceholder(event) {
   try {
     let result;
     if (sourceFile) {
+      if (isNasPreviewMode()) {
+        updateProcessingStage(
+          "Uploading to NAS",
+          "Uploading directly to your Ubuntu/NAS service with resume support.",
+        );
+        const ticket = await uploadFileToNas(sourceFile, {
+          outputFormat,
+          translate,
+          onResume() {
+            output.textContent = "Resuming the previous NAS upload...";
+          },
+          onProgress(progress) {
+            const percentage = Math.round(progress.percentage);
+            updateProcessingStage("Uploading to NAS", `Uploaded ${percentage}% of your file.`);
+            output.textContent = JSON.stringify(
+              {
+                stage: "nas_upload",
+                file_name: sourceFile.name,
+                uploaded: progress.bytesUploaded,
+                total: progress.bytesTotal,
+                percentage,
+              },
+              null,
+              2,
+            );
+          },
+        });
+        stopProcessingTimer();
+        window.location.assign(ticket.job_url);
+        return;
+      }
       updateProcessingStage(
         "Uploading file",
         "Uploading your media to cloud storage before transcription starts.",
@@ -428,4 +460,7 @@ document
   .getElementById("download-result")
   .addEventListener("click", downloadLastResult);
 wireDropzone();
+if (isNasPreviewMode()) {
+  document.querySelector(".eyebrow").textContent = "video2text NAS preview";
+}
 refreshStatus();

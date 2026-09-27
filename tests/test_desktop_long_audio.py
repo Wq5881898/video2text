@@ -186,6 +186,30 @@ class DesktopLongAudioTests(unittest.TestCase):
         self.assertTrue(all(stage[0] == self.source for stage in self.stages))
         self.assertTrue(any("Part 2/2" in stage[2] for stage in self.stages))
 
+    def test_signed_media_url_bypasses_gladia_upload(self):
+        self.duration = 140
+        signed_paths = []
+
+        def signed_url(path):
+            signed_paths.append(path)
+            return "https://upload.example.test/media/source?expires=123&signature=test"
+
+        self.config.gladia_audio_url_factory = signed_url
+        self.process()
+
+        self.mock_upload.assert_not_called()
+        self.assertEqual(signed_paths, [self.source])
+        self.assertEqual(
+            self.mock_transcribe.call_args.args[1],
+            "https://upload.example.test/media/source?expires=123&signature=test",
+        )
+
+    def test_nas_lifecycle_mode_retains_generated_audio_parts(self):
+        self.config.retain_generated_media = True
+        self.process()
+        self.assertEqual(len(self.chunks_in_cache()), 2)
+        self.assertTrue(any("lifecycle cleanup" in message for message in self.logs))
+
     def test_pending_second_part_resumes_without_resubmission_after_key_reorder(self):
         self.fail_job = "job-2"
         with self.assertRaises(TimeoutError):

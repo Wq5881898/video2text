@@ -1,0 +1,102 @@
+name: video2text-nas
+
+x-worker: &worker
+  build:
+    context: ../..
+    dockerfile: deploy/nas/Dockerfile
+  env_file:
+    - .env
+  environment:
+    VIDEO2TEXT_DATA_ROOT: /data
+    VIDEO2TEXT_CONFIG_DIR: /config
+  volumes:
+    - type: bind
+      source: ${VIDEO2TEXT_DATA_DIR:-/srv/app-data/video2text}
+      target: /data
+    - type: bind
+      source: ${VIDEO2TEXT_CONFIG_DIR:-/srv/video2text-config}
+      target: /config
+      read_only: true
+  networks:
+    - edge
+    - egress
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+  caddy:
+    image: caddy:2.11.4-alpine
+    restart: unless-stopped
+    environment:
+      VIDEO2TEXT_PUBLIC_HOST: ${VIDEO2TEXT_PUBLIC_HOST:?Set VIDEO2TEXT_PUBLIC_HOST in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - tusd
+      - worker
+    networks:
+      - edge
+      - egress
+    security_opt:
+      - no-new-privileges:true
+
+  tusd:
+    image: tusproject/tusd:v2.9.2
+    user: "1000:1000"
+    restart: unless-stopped
+    command:
+      - -upload-dir=/srv/tusd-data
+      - -base-path=/files/
+      - -behind-proxy
+      - -disable-download
+      - -disable-termination
+      - -disable-concatenation
+      - -max-size=${VIDEO2TEXT_MAX_UPLOAD_BYTES:-5368709120}
+      - -cors-allow-origin=${VIDEO2TEXT_WEB_ORIGIN_REGEX:-https://web-iota-one-31.vercel.app}
+      - -cors-allow-headers=X-Upload-Token
+      - -cors-max-age=3600
+      - -hooks-http=http://worker:8080/hooks/tusd
+      - -hooks-http-forward-headers=X-Upload-Token
+      - -hooks-http-retry=5
+      - -hooks-http-backoff=2
+      - -hooks-enabled-events=pre-create,post-receive,post-finish
+      - -progress-hooks-interval=60s
+      - -log-format=json
+    volumes:
+      - type: bind
+        source: ${VIDEO2TEXT_DATA_DIR:-/srv/app-data/video2text}/uploads
+        target: /srv/tusd-data
+    networks:
+      - edge
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  worker:
+    <<: *worker
+
+  cleanup:
+    <<: *worker
+    command: ["python", "-m", "apps.nas_worker.cleanup"]
+    restart: "no"
+    profiles:
+      - maintenance
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  edge:
+    internal: true
+  egress:
