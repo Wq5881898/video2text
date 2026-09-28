@@ -5,6 +5,7 @@ import os
 import re
 import secrets
 import shutil
+import tempfile
 import threading
 import time
 import traceback
@@ -16,6 +17,7 @@ from typing import Any
 from flask import Flask, abort, jsonify, request, send_file
 
 from packages.shared_core import PipelineConfig, process_one
+from packages.shared_core.key_management import GLADIA_KEYS_PATH, read_gladia_keys, read_translation_config
 
 from .cleanup import delete_job_media
 from .security import (
@@ -36,6 +38,19 @@ SUPPORTED_SUFFIXES = {
 SUPPORTED_OUTPUT_FORMATS = {"txt", "srt"}
 SUPPORTED_SOURCE_LANGUAGES = {"auto", "en", "zh", "en_zh"}
 SUPPORTED_TRANSLATION_PROVIDERS = {"minimax", "glm", "qwen"}
+DATA_DIRECTORIES = ("uploads", "media", "work", "results", "state")
+
+
+def _enabled_translation_providers(value: str) -> tuple[str, ...]:
+    providers = tuple(dict.fromkeys(part.strip().lower() for part in value.split(",") if part.strip()))
+    unknown = set(providers) - SUPPORTED_TRANSLATION_PROVIDERS
+    if unknown:
+        raise RuntimeError(
+            "VIDEO2TEXT_ENABLED_TRANSLATION_PROVIDERS contains unknown provider(s): "
+            + ", ".join(sorted(unknown))
+            + "; supported providers: minimax, glm, qwen"
+        )
+    return providers
 
 
 @dataclass(slots=True)
@@ -50,6 +65,7 @@ class WorkerSettings:
     media_url_ttl_seconds: int = 24 * 60 * 60
     poll_interval: int = 8
     poll_max_iters: int = 900
+    enabled_translation_providers: tuple[str, ...] = ("minimax",)
 
     @classmethod
     def from_env(cls) -> "WorkerSettings":
@@ -64,9 +80,15 @@ class WorkerSettings:
             media_url_ttl_seconds=int(os.environ.get("VIDEO2TEXT_MEDIA_URL_TTL_SECONDS", 24 * 60 * 60)),
             poll_interval=int(os.environ.get("VIDEO2TEXT_GLADIA_POLL_INTERVAL", 8)),
             poll_max_iters=int(os.environ.get("VIDEO2TEXT_GLADIA_POLL_MAX_ITERS", 900)),
+            enabled_translation_providers=_enabled_translation_providers(
+                os.environ.get("VIDEO2TEXT_ENABLED_TRANSLATION_PROVIDERS", "minimax")
+            ),
         )
 
     def validate(self) -> None:
+        self.enabled_translation_providers = _enabled_translation_providers(
+            ",".join(self.enabled_translation_providers)
+        )
         if not self.public_origin.startswith("https://"):
             raise RuntimeError("VIDEO2TEXT_PUBLIC_ORIGIN must be an HTTPS origin")
         if len(self.shared_secret) < 32:
@@ -113,6 +135,8 @@ def _validated_ticket_request(body: dict[str, Any], settings: WorkerSettings) ->
         raise ValueError("unsupported translation provider")
     if not isinstance(translate, bool):
         raise ValueError("translate must be a boolean")
+    if translate and translation_provider not in settings.enabled_translation_providers:
+        raise ValueError(f"translation provider is disabled: {translation_provider}")
     return {
         "file_name": file_name,
         "file_size": file_size,
@@ -227,10 +251,36 @@ class QueueWorker:
             self.store.fail(job_id, str(exc))
 
 
+def _local_readiness(settings: WorkerSettings) -> dict[str, bool]:
+    """Local configuration/write checks only, not a paid provider validity probe."""
+    checks: dict[str, bool] = {}
+    try:
+        checks["gladia_configured"] = bool(
+            os.environ.get("GLADIA_API_KEY", "").strip() or read_gladia_keys(GLADIA_KEYS_PATH)
+        )
+    except (OSError, ValueError):
+        checks["gladia_configured"] = False
+    for provider in settings.enabled_translation_providers:
+        try:
+            config = read_translation_config(provider)
+            checks[f"{provider}_configured"] = all(config.get(key) for key in ("api_key", "base_url", "model"))
+        except (OSError, ValueError, TypeError, AttributeError):
+            checks[f"{provider}_configured"] = False
+    checks["data_writable"] = True
+    try:
+        for directory in (settings.data_root, *(settings.data_root / name for name in DATA_DIRECTORIES)):
+            with tempfile.TemporaryFile(dir=directory) as probe:
+                probe.write(b"ready")
+                probe.flush()
+    except OSError:
+        checks["data_writable"] = False
+    return checks
+
+
 def create_app(settings: WorkerSettings | None = None, *, start_worker: bool = True) -> Flask:
     settings = settings or WorkerSettings.from_env()
     settings.validate()
-    for directory in ("uploads", "media", "work", "results", "state"):
+    for directory in DATA_DIRECTORIES:
         (settings.data_root / directory).mkdir(parents=True, exist_ok=True)
     store = JobStore(settings.data_root / "state" / "video2text.sqlite3")
     app = Flask(__name__)
@@ -247,29 +297,40 @@ def create_app(settings: WorkerSettings | None = None, *, start_worker: bool = T
             abort(401)
 
     @app.get("/health")
+    def public_health():
+        return jsonify({"ok": True, "service": "video2text-nas-worker"})
+
     @app.get("/api/health")
     def health():
-        usage = shutil.disk_usage(settings.data_root)
+        checks = _local_readiness(settings)
+        ready = all(checks.values())
+        try:
+            usage = shutil.disk_usage(settings.data_root)
+            disk_used_percent = round(usage.used / usage.total * 100, 1)
+        except OSError:
+            disk_used_percent = None
         return jsonify(
             {
                 "ok": True,
                 "service": "video2text-nas-worker",
+                "ready": ready,
+                "checks": checks,
                 "active_jobs": store.active_count(),
-                "disk_used_percent": round(usage.used / usage.total * 100, 1),
+                "disk_used_percent": disk_used_percent,
             }
-        )
+        ), 200 if ready else 503
 
     @app.get("/api/capabilities")
     def capabilities():
         return jsonify(
             {
                 "ok": True,
-                "ready": True,
+                "ready": all(_local_readiness(settings).values()),
                 "backend": "docker-nas",
                 "upload": {"protocol": "tus", "max_bytes": settings.max_upload_bytes},
                 "outputs": sorted(SUPPORTED_OUTPUT_FORMATS),
                 "source_languages": sorted(SUPPORTED_SOURCE_LANGUAGES),
-                "translation_providers": sorted(SUPPORTED_TRANSLATION_PROVIDERS),
+                "translation_providers": list(settings.enabled_translation_providers),
                 "worker_concurrency": 1,
             }
         )

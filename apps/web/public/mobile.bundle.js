@@ -9627,6 +9627,10 @@ function syncMutualExclusion(mode = "none") {
   const urlCard = document.getElementById("url-card");
   const sourceFile = document.getElementById("source-file");
   const sourceUrl = document.getElementById("source-url");
+  if (isNasPreviewMode()) {
+    urlCard.hidden = true;
+    mode = "upload";
+  }
   if (mode === "upload") {
     sourceUrl.value = "";
     sourceUrl.disabled = true;
@@ -9712,6 +9716,9 @@ function configureNasOnlyUi() {
   urlCard.hidden = true;
   sourceUrl.value = "";
   sourceUrl.disabled = true;
+  document.querySelector(".eyebrow").textContent = "video2text Ubuntu/NAS";
+  document.querySelector(".lede").textContent = "Upload a local audio or video file directly to your Ubuntu/NAS service for transcription, optional Chinese translation, and txt or srt output. URL input is not supported in NAS mode.";
+  document.querySelector("#upload-card .entry-head p").textContent = "Choose a local file. Uploads go directly to your Ubuntu/NAS service with resume support, then the job runs in the background.";
   const returnLink = document.querySelector('.alt-mode-link[href="/"]');
   if (returnLink) returnLink.href = "/nas";
 }
@@ -9780,14 +9787,19 @@ async function uploadFileWithRetry(sourceFile) {
 async function submitMobileJob(event) {
   event.preventDefault();
   const sourceFile = document.getElementById("source-file").files[0];
-  const sourceUrl = document.getElementById("source-url").value.trim();
+  const nasMode = isNasPreviewMode();
+  if (nasMode) configureNasOnlyUi();
+  const sourceUrl = nasMode ? "" : document.getElementById("source-url").value.trim();
   const outputFormat = document.getElementById("output-format").value;
   const translate = document.getElementById("translate").checked;
   document.getElementById("transcribe-output").textContent = "";
   try {
+    if (nasMode && !sourceFile) {
+      throw new Error("Choose a local file to upload to your Ubuntu/NAS service. URL input is not supported in NAS mode.");
+    }
     let payload;
     if (sourceFile) {
-      if (isNasPreviewMode()) {
+      if (nasMode) {
         showProgress(`Preparing resumable NAS upload for ${sourceFile.name}.`);
         const ticket = await uploadFileToNas(sourceFile, {
           outputFormat,

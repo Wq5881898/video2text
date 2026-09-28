@@ -131,6 +131,31 @@ class NasDeployConfigTests(unittest.TestCase):
                     process.kill()
                     process.wait(timeout=5)
 
+    def test_caddy_redacts_custom_credentials_and_signature(self):
+        caddy = (REPO_ROOT / "deploy/nas/Caddyfile").read_text(encoding="utf-8")
+        web, remainder = caddy.split("{$VIDEO2TEXT_PUBLIC_HOST}", 1)
+        upload, sub2api = remainder.split("http://:8081", 1)
+        for block in (web, upload, sub2api):
+            self.assertIn("format filter {", block)
+            self.assertIn("wrap json", block)
+            self.assertIn("request>headers>X-Upload-Token delete", block)
+            self.assertIn("request>headers>X-Video2Text-Proxy-Token delete", block)
+            # Go canonicalizes this header to Video2text, not Video2Text.
+            self.assertIn("request>headers>X-Video2text-Proxy-Token delete", block)
+            self.assertIn("request>uri query {", block)
+            self.assertIn("delete signature", block)
+        self.assertNotIn("log_credentials", caddy)
+        self.assertIn("flush_interval -1", sub2api)
+
+    def test_verify_script_is_executable_and_non_billable(self):
+        script = REPO_ROOT / "deploy/nas/verify.sh"
+        self.assertTrue(os.access(script, os.X_OK))
+        text = script.read_text(encoding="utf-8")
+        self.assertIn("config --quiet", text)
+        self.assertIn("caddy caddy validate", text)
+        self.assertNotIn("compose up", text)
+        self.assertNotIn("curl", text)
+
     def test_environment_example_uses_final_domains(self):
         environment = (REPO_ROOT / "deploy/nas/.env.example").read_text(encoding="utf-8")
         self.assertIn("VIDEO2TEXT_WEB_HOST=stt.151077.xyz", environment)

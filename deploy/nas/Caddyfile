@@ -50,7 +50,17 @@
 
     log {
         output stdout
-        format json
+        format filter {
+            wrap json
+            fields {
+                request>headers>X-Upload-Token delete
+                request>headers>X-Video2Text-Proxy-Token delete
+                request>headers>X-Video2text-Proxy-Token delete
+                request>uri query {
+                    delete signature
+                }
+            }
+        }
     }
 }
 
@@ -84,7 +94,17 @@
 
     log {
         output stdout
-        format json
+        format filter {
+            wrap json
+            fields {
+                request>headers>X-Upload-Token delete
+                request>headers>X-Video2Text-Proxy-Token delete
+                request>headers>X-Video2text-Proxy-Token delete
+                request>uri query {
+                    delete signature
+                }
+            }
+        }
     }
 }
 
@@ -110,6 +130,16 @@ http://:8081 {
 
     log {
         output stdout
-        format json
+        format filter {
+            wrap json
+            fields {
+                request>headers>X-Upload-Token delete
+                request>headers>X-Video2Text-Proxy-Token delete
+                request>headers>X-Video2text-Proxy-Token delete
+                request>uri query {
+                    delete signature
+                }
+            }
+        }
     }
 }

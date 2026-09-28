@@ -219,20 +219,27 @@ async function submitPlaceholder(event) {
   event.preventDefault();
   const output = document.getElementById("transcribe-output");
   const sourceFile = document.getElementById("source-file").files[0];
-  const sourceUrl = document.getElementById("source-url").value.trim();
+  const nasMode = isNasPreviewMode();
+  if (nasMode) configureNasOnlyUi();
+  const sourceUrl = nasMode ? "" : document.getElementById("source-url").value.trim();
   const outputFormat = document.getElementById("output-format").value;
   const translate = document.getElementById("translate").checked;
   window.__video2textLastResult = null;
   output.textContent = "Starting request...";
   startProcessingTimer(
     "Preparing request",
-    "Checking your input and preparing the cloud request.",
+    nasMode
+      ? "Checking your local file and preparing the Ubuntu/NAS upload."
+      : "Checking your input and preparing the cloud request.",
   );
 
   try {
+    if (nasMode && !sourceFile) {
+      throw new Error("Choose a local file to upload to your Ubuntu/NAS service. URL input is not supported in NAS mode.");
+    }
     let result;
     if (sourceFile) {
-      if (isNasPreviewMode()) {
+      if (nasMode) {
         updateProcessingStage(
           "Uploading to NAS",
           "Uploading directly to your Ubuntu/NAS service with resume support.",
@@ -370,6 +377,12 @@ function syncMutualExclusion(mode = "none") {
   const sourceFile = document.getElementById("source-file");
   const sourceUrl = document.getElementById("source-url");
 
+  // Keep NAS local-file-only even after clearing a file or synthetic URL input.
+  if (isNasPreviewMode()) {
+    urlCard.hidden = true;
+    mode = "upload";
+  }
+
   if (mode === "upload") {
     sourceUrl.value = "";
     sourceUrl.disabled = true;
@@ -457,6 +470,9 @@ function configureNasOnlyUi() {
   urlCard.hidden = true;
   sourceUrl.value = "";
   sourceUrl.disabled = true;
+  document.querySelector(".eyebrow").textContent = "video2text Ubuntu/NAS";
+  document.querySelector(".lede").textContent = "Upload a local audio or video file directly to your Ubuntu/NAS service for transcription, optional Chinese translation, and txt or srt output. URL input is not supported in NAS mode.";
+  document.querySelector("#upload-card .entry-head p").textContent = "Choose a local file. Uploads go directly to your Ubuntu/NAS service with resume support, then the job runs in the background.";
   const mobileLink = document.querySelector('.alt-mode-link[href="/mobile"]');
   if (mobileLink) mobileLink.href = "/mobile?storage=nas";
 }
@@ -472,7 +488,4 @@ document
   .addEventListener("click", downloadLastResult);
 wireDropzone();
 configureNasOnlyUi();
-if (isNasPreviewMode()) {
-  document.querySelector(".eyebrow").textContent = "video2text NAS preview";
-}
 refreshStatus();
