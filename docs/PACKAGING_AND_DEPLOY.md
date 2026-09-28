@@ -1,6 +1,7 @@
 # Packaging And Deploy
 
-> Updated: 2026-09-25
+> Updated: 2026-09-27
+> Docker standalone is deployed independently. Vercel remains unchanged as a separate rollback product; commands below are operator references, not an instruction to redeploy either product.
 
 ## Desktop Packaging
 
@@ -152,19 +153,27 @@ curl.exe https://web-iota-one-31.vercel.app/api/capabilities
 
 Run `npm run test:cloud` only when a real deployed smoke test is intended, because it can use Blob and provider resources.
 
-## NAS Preview Deploy
+## Standalone Docker V3 (deployed baseline: 2026-09-27)
 
-The opt-in NAS data plane is under `deploy/nas/`. It keeps the existing Vercel path intact and adds `/nas` for staged testing. On Ubuntu, mount the shared application data disk at `/srv/app-data`, prepare the isolated `/srv/app-data/video2text` child directory, copy `deploy/nas/.env.example` to `.env`, then run:
+`stt.151077.xyz` serves web/control APIs; `upload.151077.xyz` serves tus uploads and signed media reads. Input is local upload only, not an arbitrary media URL. No `NAS_PREVIEW_*` variables or Vercel changes are required.
+
+Caddy publishes 80/443 and loopback-only 8081 for the existing Sub2API allowlist. Existing Cloudflare Tunnel routes stay unchanged. Worker and tusd have no host port publications. Source is `/opt/video2text`, data is `/srv/app-data/video2text`, private provider configuration is `/srv/video2text-config`; do not recreate the existing disk or overwrite an existing `.env`.
+
+MiniMax is verified and the enabled-provider environment setting must contain only `minimax`; Qwen is disabled after HTTP 403, and GLM is unconfigured. Code support is not proof of provider readiness.
+
+Successful media/work is deleted immediately after durable result and completion-record persistence. Failed/partially completed media has a seven-day fallback retention; incomplete uploads expire after 24 hours. The capacity high-water threshold is 80%. Results and task records are retained long-term.
+
+Read-only configuration validation (do not print expanded Compose secrets):
 
 ```bash
 cd /opt/video2text/deploy/nas
-bash preflight.sh
-docker compose build worker
-docker compose up -d
-curl --fail https://upload.151077.xyz/health
+docker compose config --quiet
+docker compose run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 ```
 
-Configure the matching Vercel variables only after the public health check succeeds: `NAS_PREVIEW_ENABLED=true`, `NAS_UPLOAD_ENDPOINT`, `NAS_API_BASE`, `NAS_SHARED_SECRET`, and `NAS_PROXY_TOKEN`. The upload hostname must be Cloudflare DNS-only, not Tunnel/orange-cloud. Install the supplied systemd timer for daily seven-day media cleanup. Full instructions are in `deploy/nas/README.md`.
+The two adjacent `caddy` tokens are intentional: the first is the Compose service, the second is the executable required by this image. `docker compose run ... caddy validate` alone is not the working invocation for the existing image. Validation is not deployment or proof of public reachability. Capture only sanitized output.
+
+See [`../deploy/nas/README.md`](../deploy/nas/README.md) for operations and [`DOCKER_SESSION_AUTH_PLAN_ZH.md`](DOCKER_SESSION_AUTH_PLAN_ZH.md) for the **design-only**, not deployed, cookie-session migration. The older Vercel NAS-preview design is historical, not a standalone prerequisite.
 
 ## Separation Checklist
 

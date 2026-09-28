@@ -2,12 +2,16 @@
 
 This stack is the independent Docker V3 product. It serves its own web/control plane at `stt.151077.xyz` and the resumable upload/data plane at `upload.151077.xyz`. The existing Vercel product remains unchanged and available as a separate rollback path.
 
+> Baseline: 2026-09-27. Already deployed; setup commands below are for a separately authorized installation, not instructions to recreate this host, disk, Vercel deployment, or Tunnel. Session authentication is design-only: see [the plan](../../docs/DOCKER_SESSION_AUTH_PLAN_ZH.md).
+
+Docker accepts local uploads only, not media URL input. Standalone does not require `NAS_PREVIEW_*` variables. MiniMax has been verified; set the enabled-provider environment configuration to `minimax` only. Qwen is disabled after HTTP 403; GLM is unconfigured.
+
 ## Services
 
-- Caddy terminates public HTTPS for the DNS-only `stt` and `upload` hostnames, serves the static web app, and exposes the existing Sub2API allowlist on host loopback port 8081.
+- Caddy publishes 80/443 for the DNS-only `stt` and `upload` hostnames, serves the static web app, and exposes the existing Sub2API allowlist only on `127.0.0.1:8081`. Existing Cloudflare Tunnel routing remains unchanged. Worker and tusd publish no host ports.
 - tusd receives resumable browser uploads and disables its public download endpoint.
 - The single-worker Flask/Gunicorn service validates upload tickets, queues SQLite jobs, provides signed media reads to Gladia, runs the shared pipeline, and exposes protected status/result APIs.
-- Successful media is removed immediately after the result and SQLite completion state are durable. The maintenance profile removes failed media after seven days and abandoned partial uploads after 24 hours. TXT/SRT results are retained.
+- Successful media and work files are removed immediately after the result and SQLite completion state are durable. Failed/partially completed media has seven-day fallback retention; incomplete uploads expire after 24 hours. The capacity high-water threshold is 80%. TXT/SRT results and task records are retained long-term; cleanup must not delete active jobs or durable results.
 
 The Compose file pins Caddy `2.11.4-alpine` and tusd `v2.9.2` instead of using floating `latest` tags. Review upstream releases and update these pins deliberately after a staging smoke test.
 
@@ -49,17 +53,22 @@ Before choosing `VIDEO2TEXT_MAX_UPLOAD_BYTES` and `VIDEO2TEXT_MAX_ACTIVE_JOBS`, 
 
 ```bash
 cd /opt/video2text/deploy/nas
-cp .env.example .env
+test -e .env || cp .env.example .env
 chmod 600 .env
 ./preflight.sh
-docker compose config
+docker compose config --quiet
+docker compose run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 docker compose build worker
 docker compose up -d
 docker compose ps
 curl https://upload.151077.xyz/health
 ```
 
-Opening `https://stt.151077.xyz/` redirects to the NAS-only UI. Caddy Basic Auth protects the web and control API. The upload host exposes only tusd, signed media reads, and a non-secret health response.
+The repeated `caddy` is intentional: Compose service name first, container executable second. For the existing image, `docker compose run ... caddy validate` without the executable is not the working command. Use the full invocation above, and do not print expanded Compose configuration or private environment values. Caddy validation does not prove public routing or authentication behavior.
+
+Caddy Basic Auth protects the web and control API; after authentication, `/` redirects to the NAS-only UI. Verify unauthenticated protected routes independently, including `/`, so a redirect cannot silently bypass the intended authentication order. The upload host exposes only ticket-validated tusd, signed media reads, and a non-secret health response. No cookie-session endpoints are deployed by this documentation change.
+
+Verification should distinguish loopback 8081 allowlist behavior, local TLS with correct hostname/SNI, and public HTTPS. Check worker/tusd port isolation, tus resume, provider availability, result download, and successful media/work deletion after persistence. Record actual test output by code version rather than copying stale exact test counts. Do not submit paid E2E jobs without authorization.
 
 ## Daily fallback cleanup
 

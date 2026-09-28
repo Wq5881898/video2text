@@ -1,10 +1,29 @@
-# NAS 媒体存储迁移方案（长期任务）
+# NAS 媒体存储迁移方案（历史设计与实际偏差）
 
-> 状态：预览版代码已实现并通过本地自动化测试，尚未部署到 Ubuntu/NAS
-> 建档日期：2026-09-23
-> 技术选型复核：2026-09-25
-> 网络与保留策略复核：2026-09-25
-> 原则：先完成并验证 Vercel Blob 的短期止损，再单独实施 NAS 迁移；未通过端到端测试前不替换现有生产入口。
+> 原设计日期：2026-09-23～2026-09-25；实际偏差更新：2026-09-27。
+> **阅读边界：下方第 1～12 节保留为历史设计，不是当前操作手册，也不是已完成验收清单。** 其中“尚未部署”“未来”“当前”等措辞均指原设计时点；过期步骤不得直接执行。
+
+## 2026-09-27 实际部署与原设计偏差
+
+| 主题 | 原设计（下方历史正文） | 当前独立 Docker V3 |
+|---|---|---|
+| 部署 | Vercel NAS 灰度，尚未部署 | 已部署 standalone；Vercel 独立不变，保留为回滚产品 |
+| 控制平面 | Vercel 票据/状态代理 | `stt.151077.xyz` 网页和控制 API |
+| 数据平面 | 上传子域、tusd、签名读取 | `upload.151077.xyz` tus 与 signed media |
+| 输入 | 设计/旧产品可能涉及 URL | Docker 仅本地上传；内部签名读取不等于用户 URL 输入 |
+| 环境变量 | Vercel `NAS_PREVIEW_*` | standalone 不需要此组变量 |
+| 成功清理 | 成功媒体也保留 7 天 | 结果与完成记录持久化后立即删除媒体及 work |
+| 失败清理 | 媒体统一 7 天 | 失败/部分完成 7 天；未完成上传 24 小时 |
+| 容量/结果 | 高水位及长期结果设想 | 高水位 80%；结果与任务记录长期保留 |
+| Provider | 泛化的翻译能力 | MiniMax 已验证，仅启用 `minimax`；Qwen HTTP 403 禁用，GLM 未配置 |
+
+Caddy 提供公网 80/443；8081 仅绑定 loopback，保持原 Sub2API allowlist。现有 Cloudflare Tunnel 不变；worker/tusd 不发布宿主机端口。源码 `/opt/video2text`、应用数据 `/srv/app-data/video2text`、私有配置 `/srv/video2text-config` 均为现有边界，不应按历史步骤重新初始化磁盘或改动 Vercel。
+
+当前操作见 [`../deploy/nas/README.md`](../deploy/nas/README.md)，状态见 [`CURRENT_STATE_ZH.md`](CURRENT_STATE_ZH.md)。会话认证仅为后续设计，见 [`DOCKER_SESSION_AUTH_PLAN_ZH.md`](DOCKER_SESSION_AUTH_PLAN_ZH.md)，尚未部署。以下历史研究中的第三方产品状态和技术选型观点保留其原日期，不表示本次重新核实。
+
+---
+
+# 历史设计正文（不作为现行配置依据）
 
 ## 1. 目标与阶段划分
 

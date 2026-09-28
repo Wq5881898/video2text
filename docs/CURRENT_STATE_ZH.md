@@ -1,11 +1,11 @@
 # video2text 当前开发状态
 
-> 基线日期：2026-09-25
+> 基线日期：2026-09-27
 > 作用：记录已经落地并由当前代码支持的功能。研究设想和未来计划不算作已完成功能。
 
 ## 1. 产品总览
 
-仓库包含两个可用产品面：
+仓库包含 Windows、独立 Vercel 与独立 Docker 三个产品面。下表为桌面/Vercel 对照，Docker 状态单列于后文：
 
 Windows `v0.1.0` 已发布到 [GitHub Releases](https://github.com/Wq5881898/video2text/releases/tag/v0.1.0)。公开 ZIP 保留完整 one-folder 目录，但不包含任何 API Key。
 
@@ -36,7 +36,7 @@ Windows `v0.1.0` 已发布到 [GitHub Releases](https://github.com/Wq5881898/vid
 - Python 和 EXE 使用相同的相对目录约定，但应用根不同。Python 根是仓库；EXE 根是可执行文件目录。
 - 打包脚本处理了 PyInstaller 模块收集、Qt/VC runtime 与 ICU 冲突、内置 ffmpeg/ffprobe，并在构建后自动运行 smoke tests。
 
-## 3. Web 端已完成
+## 3. Vercel Web 端（独立、保持不变的回滚产品）
 
 - 生产地址为 `https://web-iota-one-31.vercel.app`。
 - 根页面提供互斥的本地上传/URL 输入。iOS Safari 自动重定向到 `/mobile`。
@@ -67,20 +67,35 @@ Web 端生产环境：
 
 真实密钥不应进入 Git。桌面打包时配置会复制到发布目录，发布包必须按敏感文件保管。
 
-NAS 灰度版代码已完成但尚未部署：`/nas` 通过 tusd 断点续传到 Ubuntu，单线程 Worker 使用 SQLite 保存状态，向 Gladia 提供短期签名读取 URL，媒体保留 7 天并由本地 systemd timer 每天清理。普通生产入口仍使用 Vercel Blob。
+## 5. 独立 Docker V3 当前部署
 
-## 5. 当前验证
+截至 2026-09-27，Docker 已部署，不再是“尚未部署的 NAS 预览版”。
 
-2026-09-25 本地验证结果：
+- `https://stt.151077.xyz`：独立网页、上传票据、任务控制与结果查询。
+- `https://upload.151077.xyz`：tus 断点上传、供 Gladia 拉取的短期签名媒体读取。
+- 只接受本地文件上传，不支持 URL 输入；Gladia 使用签名 URL 拉取是内部数据流，不是用户 URL 输入功能。
+- Caddy 对外提供 80/443；`127.0.0.1:8081` 仅供现有 Sub2API allowlist；Cloudflare Tunnel 保持不变。worker/tusd 无宿主机端口发布。
+- Vercel 作为独立回滚产品原样保留，不参与 Docker 控制链路；standalone 不需要 `NAS_PREVIEW_*` 环境变量。
+- 源码 `/opt/video2text`，数据 `/srv/app-data/video2text`，私有配置 `/srv/video2text-config`；文档更新不代表变更磁盘、密钥或部署。
 
-- Python `unittest`：44 项通过；
-- Web Node tests：48 项通过；
-- Node 测试包含真实生成 12,309 秒静音音频、切成两段、合并全局时间轴并删除临时分段；
-- 生产 `/api/health` 返回 `status=ready`；
-- 生产 `/api/capabilities` 检测 Blob、Gladia、MiniMax 已配置。
-- GitHub `v0.1.0` 公开 API 已验证：标签指向提交 `23274a5`，ZIP 与 SHA256 两个资产均已公开且大小匹配。
+### 生命周期
 
-这些测试不等于每次都执行真实付费转写。真实 Gladia/LLM smoke test 应单独运行并记录任务 ID。
+| 数据 | 当前策略 |
+|---|---|
+| 成功媒体、分段及 work | 最终结果和任务完成记录持久化后立即删除 |
+| 失败/部分完成媒体 | 7 天兜底保留与清理，支持故障排查/恢复 |
+| 未完成上传 | 24 小时回收 |
+| 容量保护 | 高水位 80%，不得误删运行中任务或持久结果 |
+| TXT/SRT、任务记录 | 长期保留，不随媒体清理删除 |
+
+### Provider 与验证边界
+
+- MiniMax：已验证；启用 provider 的环境配置仅为 `minimax`。
+- Qwen：调用出现 HTTP 403，当前禁用；配置存在或模型列表可读不代表翻译可用。
+- GLM：未配置，不可标为已验证或可用。
+- 不在本文件保留过时的精确测试数量。最新测试、构建和公网/E2E 证据应以对应代码版本的验收记录为准；本文不声称重新运行了这些验证。
+- 云端付费转写必须单独授权并记录脱敏证据；不得把配置读取成功当成端到端成功。
+- Basic Auth 仍是现有认证边界。Cookie session 仅为设计，见 [`DOCKER_SESSION_AUTH_PLAN_ZH.md`](DOCKER_SESSION_AUTH_PLAN_ZH.md)。
 
 ## 6. 已知边界
 
@@ -89,15 +104,12 @@ NAS 灰度版代码已完成但尚未部署：`/nas` 通过 tusd 断点续传到
 - Web 只支持 MiniMax，尚未提供桌面端的 GLM/Qwen 选择。
 - 桌面 CLI 暂未暴露源语言和翻译模型参数，使用默认 Auto + MiniMax；完整选择在 GUI。
 - `outputs/work/run_all_win.py` 等历史批处理仍使用 DeepL。它们不是当前桌面 GUI/Web 产品翻译路径。
-- NAS 直传、短期签名读取 URL、单线程任务队列和本地生命周期清理已实现为灰度版，但尚未在 Ubuntu、公网域名、iOS 和真实 Gladia 文件上完成部署验收。详见 `NAS_MEDIA_STORAGE_PLAN_ZH.md`。
+- Docker 已部署不等于所有浏览器、大文件和长音频组合均已验收；未有证据的矩阵项不得标为通过。历史 NAS 方案及实际偏差见 `NAS_MEDIA_STORAGE_PLAN_ZH.md`。
 - Ubuntu + Cloudflare Tunnel + R2 是另一份备选预研方案，尚未实施。
 
-## 7. 后续候选事项
+## 7. 后续候选事项（非已完成）
 
-- 部署并验证“成功即时删除 + 新上传触发 48 小时兜底清理”，观察 Blob 容量峰值；
-- 按 NAS 存储方案先验证 Gladia 能稳定读取短期签名 URL，再实现浏览器直传和任务迁移；
-- 如有产品需要，再把 GLM/Qwen 选择扩展到 Web；
-- 更新 `/api/capabilities`，使其完整反映后台任务、长音频和清理能力；
-- 为 GLM/Qwen 增加无密钥的示例配置文件。
-
-以上均为候选事项，不应在完成代码、测试和部署前写成“已支持”。
+- 按实际版本补充自动化测试、浏览器并发、公网路由、生命周期及长音频恢复证据。
+- 仅在真实调用验证通过后重新考虑启用 Qwen；GLM 先完成配置和验证。
+- 评审 Cookie session 认证设计，后续另行授权实施、无中断迁移与回滚测试。
+- Vercel 的能力探针与功能扩展属于独立产品工作，不作为 Docker 部署前置条件。

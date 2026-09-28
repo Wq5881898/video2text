@@ -10,7 +10,9 @@
 - Desktop: local batch queue, API key management, streaming MiniMax / GLM / Qwen translation, and automatic long-audio splitting.
 - Web 端：Vercel 生产部署，单文件或单 URL、Safari/mobile 后台任务、固定 Job URL、长音频断点续跑。
 - Web: production Vercel deployment with one file or URL per task, Safari/mobile background jobs, persistent job URLs, and resumable long-audio processing.
-- NAS 预览版：Caddy + tusd + Ubuntu 单线程 Worker 已完成代码与本地测试，部署前不会替换现有生产入口。
+- 独立 Docker V3（2026-09-27）：已部署，`stt.151077.xyz` 提供网页/控制 API，`upload.151077.xyz` 提供 tus 断点上传与签名媒体读取；仅支持本地文件上传，不支持 URL 输入。
+- Vercel 是独立、未改动的回滚产品，不是 Docker 的控制平面；standalone 不需要 `NAS_PREVIEW_*` 环境变量。
+- Docker 翻译当前仅启用 `minimax`：MiniMax 已验证，Qwen 因 HTTP 403 禁用，GLM 未配置。
 - 当前生产 Web 地址：[https://web-iota-one-31.vercel.app](https://web-iota-one-31.vercel.app)
 - Windows 正式版：[v0.1.0 Release](https://github.com/Wq5881898/video2text/releases/tag/v0.1.0)
 - 权威开发状态见 [`docs/CURRENT_STATE_ZH.md`](docs/CURRENT_STATE_ZH.md)。
@@ -84,9 +86,9 @@ Gladia 单次媒体时长上限约为 8,100 秒，产品采用 8,000 秒安全�
 5. TXT 按顺序合并，SRT 恢复到原录音全局时间轴；
 6. 最终结果成功后删除临时音频；失败时保留以便继续。
 
-重试会复用已完成段和仍在等待的远端任务，避免重复付费提交。原始音频和视频永远不会被自动删除。
+重试会复用已完成段和仍在等待的远端任务，避免重复付费提交。桌面端用户输入的原始音频和视频不会被自动删除；此规则不适用于 Web/Docker 上传副本。
 
-## Web 应用 | Web App
+## Vercel Web 应用（独立回滚产品）| Vercel Web App
 
 Web 端刻意保持“一次输入、一个结果”，不提供桌面端式批量队列：
 
@@ -98,7 +100,9 @@ Web 端刻意保持“一次输入、一个结果”，不提供桌面端式批�
 - Web 翻译当前固定使用 MiniMax M3；
 - 转写与结果生成成功后立即删除原始上传媒体；每次开始新上传时，再清理超过 48 小时的失败或遗留媒体。job 状态和结果不属于媒体清理范围，不依赖 Vercel Cron。
 
-Web 详细说明见 [`apps/web/README.md`](apps/web/README.md)。NAS 直传与 Gladia URL 拉取的预览实现见 [`deploy/nas/README.md`](deploy/nas/README.md)，架构与迁移计划见 [`docs/NAS_MEDIA_STORAGE_PLAN_ZH.md`](docs/NAS_MEDIA_STORAGE_PLAN_ZH.md)；R2/Ubuntu 备选预研见 [`docs/CLOUD_STORAGE_ALTERNATIVE_ZH.md`](docs/CLOUD_STORAGE_ALTERNATIVE_ZH.md)。
+Vercel 详细说明见 [`apps/web/README.md`](apps/web/README.md)。独立 Docker 操作说明见 [`deploy/nas/README.md`](deploy/nas/README.md)。Docker 成功结果与完成记录持久化后立即删除媒体和 work；失败/部分完成媒体保留 7 天，未完成上传 24 小时，容量高水位 80%；结果与记录长期保留。Caddy 对外提供 80/443，8081 仅 loopback 保留 Sub2API allowlist，现有 Tunnel 不变；worker/tusd 不发布宿主机端口。
+
+历史 NAS 设计与实际偏差见 [`docs/NAS_MEDIA_STORAGE_PLAN_ZH.md`](docs/NAS_MEDIA_STORAGE_PLAN_ZH.md)；会话认证仅为设计，见 [`docs/DOCKER_SESSION_AUTH_PLAN_ZH.md`](docs/DOCKER_SESSION_AUTH_PLAN_ZH.md)，不代表已替换 Basic Auth。
 
 ## 输入输出 | Input And Output
 
