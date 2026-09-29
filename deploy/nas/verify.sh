@@ -18,7 +18,8 @@ for block in caddy.split('    log {')[1:]:
                  'request>uri query', 'delete signature'):
         assert rule in block, 'Missing log redaction rule'
 route = caddy.split('    route {', 1)[1]
-assert route.index('basic_auth') < route.index('redir / /nas 302')
+assert 'basic_auth' not in caddy.split('{$VIDEO2TEXT_PUBLIC_HOST}', 1)[0]
+assert route.index('redir / /nas 302') < route.index('handle @control')
 assert '-hooks-http-backoff=2s' in compose
 assert '127.0.0.1:8081:8081' in compose
 assert 'env_file:' in compose

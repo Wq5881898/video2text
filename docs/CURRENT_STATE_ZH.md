@@ -95,7 +95,7 @@ Web 端生产环境：
 - GLM：未配置，不可标为已验证或可用。
 - 不在本文件保留过时的精确测试数量。最新测试、构建和公网/E2E 证据应以对应代码版本的验收记录为准；本文不声称重新运行了这些验证。
 - 云端付费转写必须单独授权并记录脱敏证据；不得把配置读取成功当成端到端成功。
-- Basic Auth 仍是现有认证边界。Cookie session 仅为设计，见 [`DOCKER_SESSION_AUTH_PLAN_ZH.md`](DOCKER_SESSION_AUTH_PLAN_ZH.md)。
+- 2026-09-29 用户明确要求暂时取消公网 Basic Auth，等待以后统一建设注册、用户隔离与登录验证。当前 `stt` 网页和控制 API 无登录保护，任务与结果不按用户隔离；原凭证仅保留用于回滚。会话方案仍只有设计，见 [`DOCKER_SESSION_AUTH_PLAN_ZH.md`](DOCKER_SESSION_AUTH_PLAN_ZH.md)。
 
 ## 6. 已知边界
 

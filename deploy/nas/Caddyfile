@@ -14,10 +14,6 @@
     @mobile path /mobile
 
     route {
-        basic_auth {
-            {$VIDEO2TEXT_WEB_USER} {$VIDEO2TEXT_WEB_PASSWORD_HASH}
-        }
-
         redir / /nas 302
 
         handle @control {

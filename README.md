@@ -102,7 +102,7 @@ Web 端刻意保持“一次输入、一个结果”，不提供桌面端式批�
 
 Vercel 详细说明见 [`apps/web/README.md`](apps/web/README.md)。独立 Docker 操作说明见 [`deploy/nas/README.md`](deploy/nas/README.md)。Docker 成功结果与完成记录持久化后立即删除媒体和 work；失败/部分完成媒体保留 7 天，未完成上传 24 小时，容量高水位 80%；结果与记录长期保留。Caddy 对外提供 80/443，8081 仅 loopback 保留 Sub2API allowlist，现有 Tunnel 不变；worker/tusd 不发布宿主机端口。
 
-历史 NAS 设计与实际偏差见 [`docs/NAS_MEDIA_STORAGE_PLAN_ZH.md`](docs/NAS_MEDIA_STORAGE_PLAN_ZH.md)；会话认证仅为设计，见 [`docs/DOCKER_SESSION_AUTH_PLAN_ZH.md`](docs/DOCKER_SESSION_AUTH_PLAN_ZH.md)，不代表已替换 Basic Auth。
+历史 NAS 设计与实际偏差见 [`docs/NAS_MEDIA_STORAGE_PLAN_ZH.md`](docs/NAS_MEDIA_STORAGE_PLAN_ZH.md)；2026-09-29 用户要求暂时取消 Docker 入口的 Basic Auth，当前网页与控制 API 无登录保护且无用户隔离。将来完整注册/隔离/登录方案需另行设计、实现和验收；已有会话认证草案见 [`docs/DOCKER_SESSION_AUTH_PLAN_ZH.md`](docs/DOCKER_SESSION_AUTH_PLAN_ZH.md)，未部署。
 
 ## 输入输出 | Input And Output
 

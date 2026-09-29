@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import os
 import shutil
 import socket
@@ -31,12 +30,12 @@ class NasDeployConfigTests(unittest.TestCase):
         worker_block = compose.split("  worker:\n", 1)[1].split("\n  cleanup:", 1)[0]
         self.assertNotIn("ports:", worker_block)
 
-    def test_caddy_separates_authenticated_control_and_upload_hosts(self):
+    def test_caddy_separates_public_control_and_upload_hosts(self):
         caddy = (REPO_ROOT / "deploy/nas/Caddyfile").read_text(encoding="utf-8")
         web_block, remainder = caddy.split("{$VIDEO2TEXT_PUBLIC_HOST}", 1)
         upload_block, sub2api_block = remainder.split("http://:8081", 1)
         self.assertIn("{$VIDEO2TEXT_WEB_HOST}", web_block)
-        self.assertIn("basic_auth", web_block)
+        self.assertNotIn("basic_auth", web_block)
         self.assertIn("@control path /api/*", web_block)
         self.assertIn("/files/*", upload_block)
         self.assertIn("/media/*", upload_block)
@@ -45,15 +44,12 @@ class NasDeployConfigTests(unittest.TestCase):
         self.assertNotIn("/home", sub2api_block)
         self.assertIn("respond 404", sub2api_block)
 
-    def test_caddy_authenticates_before_root_redirect_and_web_handlers(self):
+    def test_caddy_redirects_root_without_authentication(self):
         caddy = (REPO_ROOT / "deploy/nas/Caddyfile").read_text(encoding="utf-8")
         web_block = caddy.split("{$VIDEO2TEXT_PUBLIC_HOST}", 1)[0]
         before_route, route_tail = web_block.split("    route {\n", 1)
         route, after_route = route_tail.split("\n    }\n\n    log", 1)
-
-        auth = route.index("        basic_auth {")
         redirect = route.index("        redir / /nas 302")
-        self.assertLess(auth, redirect)
         for handler in (
             "        handle @control {",
             "        handle @jobs {",
@@ -62,31 +58,21 @@ class NasDeployConfigTests(unittest.TestCase):
             "        handle {",
         ):
             self.assertLess(redirect, route.index(handler), handler)
-        self.assertNotIn("basic_auth", before_route + after_route)
-        self.assertNotIn("redir / /nas 302", before_route + after_route)
+        self.assertNotIn("basic_auth", before_route + route + after_route)
 
     @unittest.skipUnless(shutil.which("caddy"), "Caddy binary is not installed")
-    def test_caddy_root_returns_401_before_authenticated_redirect(self):
+    def test_caddy_root_redirects_without_credentials(self):
         caddy = shutil.which("caddy")
         web_block = (REPO_ROOT / "deploy/nas/Caddyfile").read_text(encoding="utf-8")
         web_block = web_block.split("{$VIDEO2TEXT_PUBLIC_HOST}", 1)[0]
-        password_hash = subprocess.check_output(
-            [caddy, "hash-password", "--plaintext", "test-password"], text=True
-        ).strip()
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
             port = listener.getsockname()[1]
         web_block = web_block.replace("{$VIDEO2TEXT_WEB_HOST}", f"http://127.0.0.1:{port}")
-        environment = os.environ.copy()
-        environment.update(
-            VIDEO2TEXT_WEB_USER="test-user",
-            VIDEO2TEXT_WEB_PASSWORD_HASH=password_hash,
-        )
         opener = build_opener(ProxyHandler({}), _NoRedirect())
 
-        def request_status(path, authorization=None):
-            headers = {"Authorization": authorization} if authorization else {}
-            request = Request(f"http://127.0.0.1:{port}{path}", headers=headers)
+        def request_status(path):
+            request = Request(f"http://127.0.0.1:{port}{path}")
             try:
                 with opener.open(request, timeout=30) as response:
                     return response.status, response.headers
@@ -98,9 +84,7 @@ class NasDeployConfigTests(unittest.TestCase):
             config.write_text("{\n    admin off\n}\n\n" + web_block, encoding="utf-8")
             process = subprocess.Popen(
                 [caddy, "run", "--config", str(config), "--adapter", "caddyfile"],
-                env=environment,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                env=os.environ.copy(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
             try:
                 deadline = time.monotonic() + 10
@@ -114,15 +98,13 @@ class NasDeployConfigTests(unittest.TestCase):
                         if time.monotonic() >= deadline:
                             self.fail("Caddy did not start within 10 seconds")
                         time.sleep(0.1)
-
-                self.assertEqual(status, 401)
-                self.assertIn("Basic", headers.get("WWW-Authenticate", ""))
-                self.assertEqual(request_status("/nas")[0], 401)
-                self.assertEqual(request_status("/api/test")[0], 401)
-                token = base64.b64encode(b"test-user:test-password").decode("ascii")
-                status, headers = request_status("/", f"Basic {token}")
                 self.assertEqual(status, 302)
                 self.assertEqual(headers.get("Location"), "/nas")
+                self.assertNotIn("WWW-Authenticate", headers)
+                for path in ("/nas", "/api/health"):
+                    status, headers = request_status(path)
+                    self.assertNotEqual(status, 401)
+                    self.assertNotIn("WWW-Authenticate", headers)
             finally:
                 process.terminate()
                 try:
@@ -130,6 +112,7 @@ class NasDeployConfigTests(unittest.TestCase):
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait(timeout=5)
+
 
     def test_caddy_redacts_custom_credentials_and_signature(self):
         caddy = (REPO_ROOT / "deploy/nas/Caddyfile").read_text(encoding="utf-8")
