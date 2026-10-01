@@ -4,7 +4,7 @@ This stack is the independent Docker V3 product. It serves its own web/control p
 
 > Baseline: 2026-09-27. Already deployed; setup commands below are for a separately authorized installation, not instructions to recreate this host, disk, Vercel deployment, or Tunnel. Session authentication is design-only: see [the plan](../../docs/DOCKER_SESSION_AUTH_PLAN_ZH.md).
 
-Docker accepts local uploads only, not media URL input. Standalone does not require `NAS_PREVIEW_*` variables. MiniMax has been verified; set the enabled-provider environment configuration to `minimax` only. Qwen is disabled after HTTP 403; GLM is unconfigured.
+Docker accepts local uploads only, not media URL input. Standalone does not require `NAS_PREVIEW_*` variables. MiniMax passed the complete short-audio path; the production provider setting is `minimax,qwen`. Qwen passed one minimal real translation after a provider-specific client User-Agent fix; the full audio path was not rerun. GLM is unconfigured.
 
 ## Services
 

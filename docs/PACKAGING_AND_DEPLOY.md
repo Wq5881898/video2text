@@ -159,7 +159,7 @@ Run `npm run test:cloud` only when a real deployed smoke test is intended, becau
 
 Caddy publishes 80/443 and loopback-only 8081 for the existing Sub2API allowlist. Existing Cloudflare Tunnel routes stay unchanged. Worker and tusd have no host port publications. Source is `/opt/video2text`, data is `/srv/app-data/video2text`, private provider configuration is `/srv/video2text-config`; do not recreate the existing disk or overwrite an existing `.env`.
 
-MiniMax is verified and the enabled-provider environment setting must contain only `minimax`; Qwen is disabled after HTTP 403, and GLM is unconfigured. Code support is not proof of provider readiness.
+MiniMax passed the complete short-audio path. The enabled-provider setting is now `minimax,qwen`: Qwen passed one minimal real translation after setting a client User-Agent (the complete audio path was not rerun). GLM remains unconfigured. Code support alone is not proof of provider readiness.
 
 Successful media/work is deleted immediately after durable result and completion-record persistence. Failed/partially completed media has a seven-day fallback retention; incomplete uploads expire after 24 hours. The capacity high-water threshold is 80%. Results and task records are retained long-term.
 

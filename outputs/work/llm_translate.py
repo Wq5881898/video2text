@@ -147,6 +147,7 @@ def _stream_completion(config: dict[str, str], segments: list[dict]) -> tuple[st
             "Content-Type": "application/json",
             "Accept": "text/event-stream",
             "Cache-Control": "no-cache",
+            **({"User-Agent": "Mozilla/5.0 (compatible; video2text/1.0)"} if config["provider"] == "qwen" else {}),
         },
         method="POST",
     )

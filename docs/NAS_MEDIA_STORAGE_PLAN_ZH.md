@@ -15,7 +15,7 @@
 | 成功清理 | 成功媒体也保留 7 天 | 结果与完成记录持久化后立即删除媒体及 work |
 | 失败清理 | 媒体统一 7 天 | 失败/部分完成 7 天；未完成上传 24 小时 |
 | 容量/结果 | 高水位及长期结果设想 | 高水位 80%；结果与任务记录长期保留 |
-| Provider | 泛化的翻译能力 | MiniMax 已验证，仅启用 `minimax`；Qwen HTTP 403 禁用，GLM 未配置 |
+| Provider | 泛化的翻译能力 | MiniMax 完整短音频链路已验收；Qwen 修正客户端 User-Agent 后通过最短真实翻译请求，生产启用 `minimax,qwen`，尚未重新验证 Qwen 完整音频链路；GLM 未配置 |
 
 Caddy 提供公网 80/443；8081 仅绑定 loopback，保持原 Sub2API allowlist。现有 Cloudflare Tunnel 不变；worker/tusd 不发布宿主机端口。源码 `/opt/video2text`、应用数据 `/srv/app-data/video2text`、私有配置 `/srv/video2text-config` 均为现有边界，不应按历史步骤重新初始化磁盘或改动 Vercel。
 

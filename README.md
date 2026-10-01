@@ -12,7 +12,7 @@
 - Web: production Vercel deployment with one file or URL per task, Safari/mobile background jobs, persistent job URLs, and resumable long-audio processing.
 - 独立 Docker V3（2026-09-27）：已部署，`stt.151077.xyz` 提供网页/控制 API，`upload.151077.xyz` 提供 tus 断点上传与签名媒体读取；仅支持本地文件上传，不支持 URL 输入。
 - Vercel 是独立、未改动的回滚产品，不是 Docker 的控制平面；standalone 不需要 `NAS_PREVIEW_*` 环境变量。
-- Docker 翻译当前仅启用 `minimax`：MiniMax 已验证，Qwen 因 HTTP 403 禁用，GLM 未配置。
+- Docker 翻译当前启用 `minimax,qwen`：MiniMax 的完整音频链路已验收；Qwen 在修正 Python 客户端 User-Agent 后通过一次最短真实翻译调用（未重新验收完整音频链路）；GLM 未配置。
 - 当前生产 Web 地址：[https://web-iota-one-31.vercel.app](https://web-iota-one-31.vercel.app)
 - Windows 正式版：[v0.1.0 Release](https://github.com/Wq5881898/video2text/releases/tag/v0.1.0)
 - 权威开发状态见 [`docs/CURRENT_STATE_ZH.md`](docs/CURRENT_STATE_ZH.md)。
