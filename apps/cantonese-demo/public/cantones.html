@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light"><title>粵語影片，英文字幕。</title>
+  <link rel="stylesheet" href="/cantones/cantones.css"><script type="module" src="/cantones/cantones.mjs"></script>
+</head>
+<body>
+  <header><a class="brand" href="/cantones"><span class="brand-mark" aria-hidden="true">字</span><span data-i18n="brand">粵語字幕</span><span class="demo">DEMO</span></a>
+    <nav><a href="/" data-i18n="back">返回語音轉字幕</a><div class="locale" role="group" aria-label="Interface language"><button id="traditional" type="button" lang="zh-Hant" aria-pressed="true">繁體中文</button><button id="english-ui" type="button" lang="en" aria-pressed="false">English</button></div></nav>
+  </header>
+  <main>
+    <section class="intro"><p class="eyebrow">CANTONESE → ENGLISH</p><h1 data-i18n="title">粵語影片，英文字幕。</h1><p data-i18n="intro">上傳原影片，自動轉寫、核對術語及畫面，產生英文字幕。</p></section>
+    <div id="notice" role="status" hidden><p id="notice-text"></p><details id="error-details" hidden><summary data-i18n="details">詳細訊息</summary><p id="error-text"></p></details></div>
+    <section id="upload-panel" class="card">
+      <label id="dropzone" tabindex="0" role="button"><input type="file" id="file" accept="video/*,.mkv,.webm,.mov" hidden>
+        <span class="upload-icon" aria-hidden="true">↑</span><strong id="file-name" data-i18n="upload">拖入原影片</strong><span data-i18n="choose">或按一下選擇檔案</span><small data-i18n="limits">MP4、MOV、MKV、WebM · 最長 30 分鐘 · 最大 512 MB</small>
+      </label>
+      <details class="glossary"><summary data-i18n="optional">補充術語</summary><label for="glossary" data-i18n="glossary">專有名稱或固定譯法（選填）</label><textarea id="glossary" maxlength="2000" rows="3" data-placeholder="glossaryHint"></textarea></details>
+      <div class="start-row"><span id="service-state" class="subtle" role="status"></span><button id="start" class="primary" disabled data-i18n="start">產生英文字幕</button></div>
+      <p class="small" data-i18n="privacy">影片上傳至此服務處理；音軌和必要截圖會傳送至 MiniMax。</p>
+    </section>
+    <ol class="flow"><li data-i18n="flow1">擷取音軌</li><li data-i18n="flow2">粵語轉寫</li><li data-i18n="flow3">詞庫與畫面核對</li><li data-i18n="flow4">英文翻譯與複核</li></ol>
+    <section id="progress-panel" class="card" hidden aria-live="polite"><div class="progress-label"><strong id="stage"></strong><span id="percent"></span></div><progress id="progress" max="100" value="0" data-label="progressLabel"></progress>
+      <p id="cooldown" class="small" hidden></p><label id="unknown-box" class="check" hidden><input type="checkbox" id="unknown"><span data-i18n="unknown"></span></label><button id="resume" class="secondary" hidden data-i18n="resume">繼續處理</button>
+    </section>
+    <section id="results" hidden>
+      <div class="result-heading"><div><h2 id="result-title"></h2><p id="result-intro" class="subtle"></p><p id="stats" class="small"></p></div><button id="download" class="primary" hidden data-i18n="download">下載英文 SRT</button></div>
+      <div id="preview" class="card" hidden><video id="video" controls playsinline preload="metadata"></video><div id="caption" aria-live="off"></div></div>
+      <div id="result-toolbar"><div class="filters" role="group"><button id="filter-pending" aria-pressed="true" data-i18n="questions">只看待確認</button><button id="filter-all" aria-pressed="false" data-i18n="all">全部字幕</button></div><button id="save" class="secondary" disabled data-i18n="save">儲存修改</button></div>
+      <p id="no-questions" class="small" hidden data-i18n="noQuestions"></p><div id="rows"></div>
+      <div id="source-actions" class="card" hidden><label class="check"><input type="checkbox" id="source-confirmed"><span data-i18n="reviewedLabel"></span></label><button id="confirm-source" class="primary" disabled data-i18n="sourceConfirm">已核對以上疑點，繼續翻譯</button></div>
+      <p class="small" data-i18n="draftNote">自動產生的字幕仍需核對。畫面不清楚或口述含糊的地方會保留提示。</p>
+      <button id="new-video" class="text-button" data-i18n="newVideo">處理另一部影片</button>
+    </section>
+    <section class="history"><label for="history" data-i18n="history">最近的影片</label><select id="history"><option value="" data-i18n="pickHistory">開啟先前的工作</option></select></section>
+  </main><footer><span>video2text / Cantonese</span><span data-i18n="service">MiniMax ASR + M3</span></footer>
+</body></html>

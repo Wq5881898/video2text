@@ -8,6 +8,7 @@ config/deepl_key.txt
 config/qwen.json
 config/glm.json
 config/minimax.json
+config/providers.json
 .env
 
 # Python cache

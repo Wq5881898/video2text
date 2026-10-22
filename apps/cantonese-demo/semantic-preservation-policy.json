@@ -1,0 +1,107 @@
+{
+  "version": "semantic-preservation-v3",
+  "scope": "General rules learned from evaluated samples, frozen separately for future runs. Previously sealed v2 samples remain unchanged; replaying them is a learning regression, not a new blind test.",
+  "rules": [
+    {
+      "id": "conditional",
+      "requirement": "Preserve 如果/假如/若/嘅話 as an explicit conditional. As it falls/now that it has fallen are not interchangeable with if it falls."
+    },
+    {
+      "id": "duration",
+      "requirement": "Resolve quantities across cue boundaries: 差唔多成個半月 = almost one and a half months. Preserve the subject of the duration. Never infer from one isolated half-word."
+    },
+    {
+      "id": "retracement",
+      "requirement": "Distinguish a pullback lasting one day from giving back one day's gains; time elapsed is not price change."
+    },
+    {
+      "id": "comparison",
+      "requirement": "Preserve the number of objects, membership and ranking. Two worst-performing indices is not the worse of two indices. Do not add by far unless the source asserts magnitude."
+    },
+    {
+      "id": "assertion",
+      "requirement": "Preserve question/assertion and actual/possible/predicted distinctions; do not hedge a definite assertion or assert an uncertain event."
+    },
+    {
+      "id": "units",
+      "requirement": "Preserve numerical values, percent vs percentage points, units and explicit currency. Do not import a currency or precise chart value absent from the utterance. Chinese numerals may be rendered as Arabic numerals."
+    },
+    {
+      "id": "causality",
+      "requirement": "Keep cause, effect and the object of each change explicit; changes in rates, yields, margins and prices are different quantities."
+    },
+    {
+      "id": "terms",
+      "requirement": "Use context-specific canonical names and spelling supplied by source evidence. Preserve correct tickers. An OCR reading is a hypothesis; unrelated charts are not evidence for spoken meaning."
+    },
+    {
+      "id": "complete-context",
+      "requirement": "Translate complete semantic paragraphs with adjacent context, then distribute the meaning exactly once over the original IDs. Do not summarize away any substantive claim."
+    },
+    {
+      "id": "ambiguity",
+      "requirement": "Do not invent a brand, ticker, action or investment recommendation from an unresolved sound. Explain unresolved source ambiguity separately from proven translation errors."
+    },
+    {
+      "id": "local-repair",
+      "requirement": "Any proposed repair must quote a unique exact substring and change only that span. A full paragraph rewrite is not an acceptable repair. Verify unaffected facts remain unchanged."
+    },
+    {
+      "id": "quantity-roles",
+      "requirement": "For every probability or proportion identify its measured object, denominator, starting level, ending level and change amount separately. From/to/by are not interchangeable. A probability of an unchanged rate is not a fraction of that rate kept unchanged. Unknown numerical roles remain unknown; flag ambiguity rather than choosing a precise relation without evidence."
+    },
+    {
+      "id": "financial-object",
+      "requirement": "Distinguish yields/rates from bond prices, stock prices/counts from the percentage of stocks above/below a moving average. Make a source-supported omitted object explicit; never add an inverse price/yield claim not spoken."
+    },
+    {
+      "id": "cross-cue-scope",
+      "requirement": "Resolve the scope of likely/probably, a start date and a conditional across adjacent cues. Do not repeat a clause while moving its wording to a neighboring cue. Keep review explanations and uncertainty about mere filler out of spoken subtitles."
+    },
+    {
+      "id": "function-words",
+      "requirement": "Check Cantonese functional words and near-homophones as well as jargon. An implausible geographic/actor qualifier before a market description may be a misrecognized verb; seek source audio/context, or retain a review warning without inventing an entity."
+    },
+    {
+      "id": "approved-source-authority",
+      "requirement": "The approved transcript is the only wording to translate. Rejected ASR readings, raw OCR and selection-priority scores must stay out of the translation input. A selection score is not speech confidence."
+    },
+    {
+      "id": "negation-logical-scope",
+      "requirement": "Separate AFFIRM(means,NOT(P as B)) from NOT(means,P). In 代表…唔係…好似B咁X, the assertion is affirmative and the property/comparison is negative. Preserve that logical scope; do not move not onto mean/show/indicate."
+    },
+    {
+      "id": "cardinal-ordinal",
+      "requirement": "A count of trading days is not the nth trading day. Never add an ordinal or an unspoken start date to repair an ambiguous count; flag missing origin separately."
+    },
+    {
+      "id": "volume-rate",
+      "requirement": "交投量/成交量 are trading volume; 交投率/換手率 may be a turnover rate. Translate the approved source object rather than reverting to a rejected similar-sounding term."
+    },
+    {
+      "id": "degree-and-similarity",
+      "requirement": "Close to exhaustion or little momentum left is not already entirely exhausted or silence. Similar to another index's pullback is not almost all gains retraced. Preserve degree, comparison object and time interval without adding chart interpretations."
+    },
+    {
+      "id": "degree-negation-extent",
+      "requirement": "In 唔系咁panic去到对冲得好犀利, not applies to reaching that extent of hedging. Do not assert aggressive hedging in a second affirmative clause."
+    },
+    {
+      "id": "split-week-unit",
+      "requirement": "礼拜/禮拜 means week even when split across cues. Preserve 52-week highs/lows as a time-window indicator, never 52 percent."
+    },
+    {
+      "id": "entity-separation",
+      "requirement": "PMO and S&P 500 are two co-occurring entities. Preserve both; do not merge or replace one with the other. Use Nasdaq 100 consistently when that approved source identity is explicit."
+    },
+    {
+      "id": "only-and-over",
+      "requirement": "Only a number does not imply more than that number. Add over/more than only if the approved source explicitly asserts greater-than."
+    },
+    {
+      "id": "financial-pattern-geometry",
+      "requirement": "A head, a left shoulder and a right shoulder are three pattern components, not a head on the left and shoulders on the right."
+    }
+  ],
+  "revision": "2026-10-21-units-negation-entities"
+}

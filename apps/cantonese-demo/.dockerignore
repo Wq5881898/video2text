@@ -1,0 +1,10 @@
+*
+!*.mjs
+!package.json
+!financial-error-lexicon.json
+!translation-context-rules.json
+!semantic-preservation-policy.json
+!public/
+!public/**
+!tests/
+!tests/*.test.mjs

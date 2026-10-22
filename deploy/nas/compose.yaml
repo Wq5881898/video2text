@@ -34,6 +34,8 @@ services:
       VIDEO2TEXT_PUBLIC_HOST: ${VIDEO2TEXT_PUBLIC_HOST:?Set VIDEO2TEXT_PUBLIC_HOST in .env}
       VIDEO2TEXT_WEB_HOST: ${VIDEO2TEXT_WEB_HOST:?Set VIDEO2TEXT_WEB_HOST in .env}
       VIDEO2TEXT_SUB2API_UPSTREAM: ${VIDEO2TEXT_SUB2API_UPSTREAM:-10.0.0.218:8080}
+      VIDEO2TEXT_CANTONES_USER: ${VIDEO2TEXT_CANTONES_USER:?Set VIDEO2TEXT_CANTONES_USER in .env}
+      VIDEO2TEXT_CANTONES_PASSWORD_HASH: ${VIDEO2TEXT_CANTONES_PASSWORD_HASH:?Set VIDEO2TEXT_CANTONES_PASSWORD_HASH in .env}
     ports:
       - "80:80"
       - "443:443"
@@ -47,6 +49,7 @@ services:
     depends_on:
       - tusd
       - worker
+      - cantones
     networks:
       - edge
       - egress
@@ -88,6 +91,36 @@ services:
 
   worker:
     <<: *worker
+
+  cantones:
+    build:
+      context: ../../apps/cantonese-demo
+      dockerfile: ../../deploy/nas/Dockerfile.cantones
+    env_file:
+      - .env
+    environment:
+      VIDEO2TEXT_CONFIG_DIR: /config
+      DEMO_PORT: 4178
+      CANTONES_BIND: 0.0.0.0
+      CANTONES_ONLY: 1
+      CANTONES_PUBLIC_ORIGIN: https://${VIDEO2TEXT_WEB_HOST}
+    volumes:
+      - type: bind
+        source: ${VIDEO2TEXT_DATA_DIR:?Set VIDEO2TEXT_DATA_DIR in .env}/cantones
+        target: /app/apps/cantonese-demo/.data
+      - type: bind
+        source: ${VIDEO2TEXT_CONFIG_DIR:-/srv/video2text-config}
+        target: /config
+        read_only: true
+    networks:
+      - edge
+      - egress
+    restart: unless-stopped
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
 
   cleanup:
     <<: *worker

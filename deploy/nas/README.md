@@ -8,6 +8,7 @@ Docker accepts local uploads only, not media URL input. Standalone does not requ
 
 ## Services
 
+- The Cantonese video-to-English demo is a separate Node/FFmpeg service under `/cantones`, with its own prefix-wide Basic Auth. Existing Docker V3 pages and APIs keep their current public-access policy. Fetch the GitHub delivery branch and follow [the incremental deployment instructions](CANTONES_DEPLOYMENT.md); no ZIP transfer is required.
 - Caddy publishes 80/443 for the DNS-only `stt` and `upload` hostnames, serves the static web app, and exposes the existing Sub2API allowlist only on `127.0.0.1:8081`. Existing Cloudflare Tunnel routing remains unchanged. Worker and tusd publish no host ports.
 - tusd receives resumable browser uploads and disables its public download endpoint.
 - The single-worker Flask/Gunicorn service validates upload tickets, queues SQLite jobs, provides signed media reads to Gladia, runs the shared pipeline, and exposes protected status/result APIs.
@@ -23,7 +24,7 @@ Use a dedicated virtual disk formatted as ext4 or XFS and mount the whole disk a
 sudo mkdir -p /srv/app-data
 sudo chown root:root /srv/app-data
 sudo chmod 755 /srv/app-data
-sudo mkdir -p /srv/app-data/video2text/{uploads,media,work,results,state}
+sudo mkdir -p /srv/app-data/video2text/{uploads,media,work,results,state,cantones}
 sudo mkdir -p /srv/video2text-config
 sudo chown -R 1000:1000 /srv/app-data/video2text /srv/video2text-config
 sudo chmod 750 /srv/app-data/video2text /srv/video2text-config
@@ -58,7 +59,7 @@ chmod 600 .env
 ./preflight.sh
 docker compose config --quiet
 docker compose run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-docker compose build worker
+docker compose build worker cantones
 docker compose up -d
 docker compose ps
 curl https://upload.151077.xyz/health
@@ -66,7 +67,7 @@ curl https://upload.151077.xyz/health
 
 The repeated `caddy` is intentional: Compose service name first, container executable second. For the existing image, `docker compose run ... caddy validate` without the executable is not the working command. Use the full invocation above, and do not print expanded Compose configuration or private environment values. Caddy validation does not prove public routing or authentication behavior.
 
-Current temporary policy (user-requested): `stt.151077.xyz` has no Basic Auth; `/` redirects to `/nas` without login, and the web/control API is publicly reachable. The upload host still exposes only ticket-validated tusd, signed media reads, and minimal health. Existing Basic Auth credentials are retained privately for rollback but are no longer enforced. No user registration, ownership isolation, or cookie-session endpoints are deployed; do not mistake this temporary public-access state for the future auth design.
+Current temporary policy (user-requested): existing `stt.151077.xyz` routes have no Basic Auth; `/` redirects to `/nas` without login, and the original web/control API is publicly reachable. Only the new `/cantones` prefix uses `VIDEO2TEXT_CANTONES_USER` and `VIDEO2TEXT_CANTONES_PASSWORD_HASH`, including all demo API/media routes. The upload host still exposes only ticket-validated tusd, signed media reads, and minimal health. No user registration, ownership isolation, or cookie-session endpoints are deployed; do not mistake this demo password gate for the future auth design.
 
 Verification should distinguish loopback 8081 allowlist behavior, local TLS with correct hostname/SNI, and public HTTPS. Check worker/tusd port isolation, tus resume, provider availability, result download, and successful media/work deletion after persistence. Record actual test output by code version rather than copying stale exact test counts. Do not submit paid E2E jobs without authorization.
 

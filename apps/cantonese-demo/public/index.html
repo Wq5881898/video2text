@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light"><title>粤语字幕工作台 · Demo</title>
+  <link rel="stylesheet" href="/styles.css"><script type="module" src="/app.mjs"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="字幕工作台首页"><span class="brand-icon">字</span><span>字幕工作台 <small>SUBTITLE STUDIO</small></span></a>
+    <div class="top-actions"><a href="/cantones">粵語 → English</a><span class="pill">独立 DEMO</span><span id="connection" class="connection">正在检查服务…</span></div>
+  </header>
+  <main>
+    <div class="intro"><div><p class="eyebrow">CANTONESE → ENGLISH / 简体中文</p><h1>让内容跨过语言。</h1><p class="subtitle">从粤语成片开始，生成、核对并导出三套字幕。</p></div><button id="example" class="button secondary">体验界面示例 <span aria-hidden="true">↗</span></button></div>
+    <div id="notice" class="notice" role="status" hidden></div>
+    <div class="workspace">
+      <aside class="setup panel">
+        <div class="panel-title"><span class="step-number">01</span><h2>准备素材</h2></div>
+        <label class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="选择或拖入视频">
+          <input id="media-input" type="file" accept="video/*,audio/*,.mkv,.flac,.m4a" hidden>
+          <span class="upload-symbol" aria-hidden="true">↑</span><strong id="file-name">拖入原视频或音频</strong><span id="file-meta">或点击选择文件</span><small>MP4 / MOV / M4A / MP3 等<br>最长 30 分钟 · 最大 512 MB</small>
+        </label>
+        <div class="field"><label for="recognition-mode">源语言</label><select id="recognition-mode"><option value="yue">粤语 · 允许夹杂英文</option></select><p class="hint">MiniMax ASR → 词库与同期截图审校 → 确认粤语 → 英文／简中。</p></div>
+        <div class="field"><label for="glossary">术语表 <span>选填</span></label><textarea id="glossary" rows="3" maxlength="2000" placeholder="例如：CPI = 消费者价格指数&#10;公司名称、指数缩写或固定译法"></textarea></div>
+        <div class="outputs"><span>生成字幕</span><div><b>粤语原文</b><b>English</b><b>简体中文</b></div></div>
+        <button id="generate" class="button primary full" disabled>识别并审校粤语 <span aria-hidden="true">→</span></button>
+        <p id="config-help" class="hint">正在读取服务配置…</p>
+        <button id="check-service" class="button secondary full">检查服务连接</button>
+        <p id="service-status" class="hint" role="status">开始前会检查审校／翻译连接；短请求可能消耗少量额度，成功后缓存五分钟。</p>
+        <div id="progress-box" hidden><div class="progress-caption"><span id="stage-text">准备中</span><span id="progress-value">0%</span></div><progress id="progress" max="100" value="0"></progress><button id="resume" class="button secondary full" hidden>继续此任务</button><label id="retry-unknown-box" class="hint" hidden><input id="retry-unknown" type="checkbox">已核对服务商记录，允许重发结果未知的请求（可能再次消耗额度）</label></div>
+        <div class="history-section"><label for="history">最近的真实任务</label><select id="history"><option value="">选择历史任务…</option></select></div>
+      </aside>
+      <section class="viewer-column">
+        <div class="preview panel">
+          <div class="preview-top"><span><span class="step-number">02</span> 视频与字幕</span><span id="preview-label" class="muted">等待素材</span></div>
+          <div class="video-stage" id="video-stage">
+            <video id="video" controls preload="metadata" hidden></video>
+            <div id="empty-video"><div class="play-outline" aria-hidden="true">▶</div><h3>在这里回看每一句</h3><p>选择视频后，点击字幕即可定位回听。</p><div class="empty-language"><span>粵</span><span>EN</span><span>简</span></div></div>
+            <div id="caption" class="caption" aria-live="off" hidden></div>
+          </div>
+          <div class="preview-bottom"><div class="language-tabs" role="group" aria-label="预览字幕语言"><button data-lang="yue" aria-pressed="true">粤语</button><button data-lang="en" aria-pressed="false">English</button><button data-lang="zh" aria-pressed="false">简体中文</button></div><span id="preview-time" class="mono">00:00 / --:--</span></div>
+        </div>
+        <div class="reference panel"><div><h2>人工参考字幕 <span class="optional">选填</span></h2><p>生成后按时间对照，参考内容仅留在浏览器中。</p></div><div class="reference-actions"><select id="reference-language" aria-label="参考字幕语言"><option value="yue">粤语参考</option><option value="en">英文参考</option><option value="zh">简中参考</option></select><label class="button secondary small">导入参考<input id="reference-input" type="file" accept=".srt,.vtt,.json,.txt" hidden></label><button id="clear-reference" class="text-button" hidden>清除</button></div><p id="reference-info" class="hint wide">支持 SRT、VTT、JSON、TXT。只有开始时间的参考，不能用于精确时序评分。</p></div>
+      </section>
+    </div>
+    <section class="editor panel">
+      <div class="editor-head"><div><p class="eyebrow">REVIEW & EXPORT</p><h2>逐段核对，放心交付。</h2></div><div class="editor-stats"><span><strong id="count-total">—</strong> 段字幕</span><span><strong id="count-review">—</strong> 已审核</span><span class="attention"><strong id="count-issues">—</strong> 待检查</span></div></div>
+      <div class="editor-toolbar"><div class="filters" role="group" aria-label="筛选字幕"><button data-filter="all" aria-pressed="true">全部</button><button data-filter="issues" aria-pressed="false">待检查</button><button data-filter="unreviewed" aria-pressed="false">未审核</button></div><label class="search"><span aria-hidden="true">⌕</span><input id="search" placeholder="搜索字幕、术语或数字" aria-label="搜索字幕"></label><button id="save" class="button secondary small" disabled>保存修订</button></div>
+      <div id="workflow-controls" class="workflow-controls" hidden><p id="source-status" class="hint"></p><button id="translate" class="button primary small">确认粤语并生成英文／简中</button><div class="language-tabs" role="group" aria-label="选择译文编辑语言"><button data-editlang="en" aria-pressed="true">粤语 ↔ English</button><button data-editlang="zh" aria-pressed="false">粤语 ↔ 简体中文</button></div></div>
+      <div id="example-banner" class="example-banner" hidden>界面演示数据 · 并非 Gladia 识别结果，不能用于评价模型质量。</div>
+      <div id="editor-empty" class="editor-empty"><span>三种语言，一处核对。</span><p>生成字幕或载入界面示例后，可逐段编辑、回听、标记审核。</p></div>
+      <div id="subtitle-list" class="subtitle-list"></div>
+      <div class="export-bar"><div><strong>导出字幕</strong><p id="export-note">每种语言独立下载，保留原视频同名文件。</p></div><div class="export-buttons"><select id="export-mode" aria-label="导出用途"><option value="draft">审阅草稿</option><option value="final">正式字幕（检查全部待核项）</option></select><button data-export="yue" class="button secondary small" disabled>粤语 SRT ↓</button><button data-export="en" class="button secondary small" disabled>English SRT ↓</button><button data-export="zh" class="button secondary small" disabled>简中 SRT ↓</button><button id="export-bundle" class="button secondary small" disabled>三语打包 ZIP ↓</button><button id="export-json" class="button dark small" disabled>项目 JSON ↓</button></div></div>
+    </section>
+    <footer><span>先生成，再核对。原文与初稿分别保留。</span><span>UTF-8 SRT · 适用于 YouTube 字幕上传</span></footer>
+  </main>
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>

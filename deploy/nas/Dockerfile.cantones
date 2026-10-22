@@ -1,0 +1,18 @@
+FROM node:24-bookworm-slim
+
+ENV NODE_ENV=production \
+    VIDEO2TEXT_CONFIG_DIR=/config \
+    DEMO_PORT=4178 \
+    CANTONES_BIND=0.0.0.0 \
+    CANTONES_ONLY=1
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app/apps/cantonese-demo
+COPY --chown=node:node . ./
+RUN mkdir -p .data && chown node:node .data
+USER node
+EXPOSE 4178
+CMD ["node", "server.mjs"]

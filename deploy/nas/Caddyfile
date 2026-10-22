@@ -12,9 +12,17 @@
     @jobs path /jobs/*
     @nas path /nas
     @mobile path /mobile
+    @cantones path /cantones /cantones/*
 
     route {
         redir / /nas 302
+
+        handle @cantones {
+            basic_auth {
+                {$VIDEO2TEXT_CANTONES_USER} {$VIDEO2TEXT_CANTONES_PASSWORD_HASH}
+            }
+            reverse_proxy cantones:4178
+        }
 
         handle @control {
             reverse_proxy worker:8080

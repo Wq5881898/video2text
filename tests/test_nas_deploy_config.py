@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import base64
 import shutil
 import socket
 import subprocess
@@ -35,7 +36,9 @@ class NasDeployConfigTests(unittest.TestCase):
         web_block, remainder = caddy.split("{$VIDEO2TEXT_PUBLIC_HOST}", 1)
         upload_block, sub2api_block = remainder.split("http://:8081", 1)
         self.assertIn("{$VIDEO2TEXT_WEB_HOST}", web_block)
-        self.assertNotIn("basic_auth", web_block)
+        protected = web_block.split("        handle @cantones {", 1)[1].split("        handle @control {", 1)[0]
+        self.assertIn("basic_auth", protected)
+        self.assertIn("reverse_proxy cantones:4178", protected)
         self.assertIn("@control path /api/*", web_block)
         self.assertIn("/files/*", upload_block)
         self.assertIn("/media/*", upload_block)
@@ -58,7 +61,9 @@ class NasDeployConfigTests(unittest.TestCase):
             "        handle {",
         ):
             self.assertLess(redirect, route.index(handler), handler)
-        self.assertNotIn("basic_auth", before_route + route + after_route)
+        public_route = route.split("        handle @control {", 1)[1]
+        self.assertNotIn("basic_auth", before_route + public_route + after_route)
+        self.assertEqual(route.count("basic_auth"), 1)
 
     @unittest.skipUnless(shutil.which("caddy"), "Caddy binary is not installed")
     def test_caddy_root_redirects_without_credentials(self):
@@ -71,8 +76,10 @@ class NasDeployConfigTests(unittest.TestCase):
         web_block = web_block.replace("{$VIDEO2TEXT_WEB_HOST}", f"http://127.0.0.1:{port}")
         opener = build_opener(ProxyHandler({}), _NoRedirect())
 
-        def request_status(path):
+        def request_status(path, credentials=None):
             request = Request(f"http://127.0.0.1:{port}{path}")
+            if credentials is not None:
+                request.add_header("Authorization", "Basic " + base64.b64encode(credentials.encode()).decode())
             try:
                 with opener.open(request, timeout=30) as response:
                     return response.status, response.headers
@@ -82,9 +89,14 @@ class NasDeployConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / "Caddyfile"
             config.write_text("{\n    admin off\n}\n\n" + web_block, encoding="utf-8")
+            environment = os.environ.copy()
+            environment["VIDEO2TEXT_CANTONES_USER"] = "demo-test"
+            environment["VIDEO2TEXT_CANTONES_PASSWORD_HASH"] = subprocess.check_output(
+                [caddy, "hash-password", "--plaintext", "runtime-test-password"], text=True,
+            ).strip()
             process = subprocess.Popen(
                 [caddy, "run", "--config", str(config), "--adapter", "caddyfile"],
-                env=os.environ.copy(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
             try:
                 deadline = time.monotonic() + 10
@@ -105,6 +117,12 @@ class NasDeployConfigTests(unittest.TestCase):
                     status, headers = request_status(path)
                     self.assertNotEqual(status, 401)
                     self.assertNotIn("WWW-Authenticate", headers)
+                for path in ("/cantones", "/cantones/", "/cantones/api/health", "/cantones/api/jobs"):
+                    status, headers = request_status(path)
+                    self.assertEqual(status, 401, path)
+                    self.assertIn("WWW-Authenticate", headers)
+                    status, headers = request_status(path, "demo-test:runtime-test-password")
+                    self.assertNotEqual(status, 401, path)
             finally:
                 process.terminate()
                 try:
@@ -149,6 +167,22 @@ class NasDeployConfigTests(unittest.TestCase):
         compose = (REPO_ROOT / "deploy/nas/compose.yaml").read_text(encoding="utf-8")
         self.assertIn("-hooks-http-backoff=2s", compose)
         self.assertNotIn("-hooks-http-backoff=2\n", compose)
+
+    def test_cantones_build_context_and_private_runtime_mount(self):
+        compose = (REPO_ROOT / "deploy/nas/compose.yaml").read_text(encoding="utf-8")
+        block = compose.split("  cantones:\n", 1)[1].split("\n  cleanup:", 1)[0]
+        self.assertNotIn("ports:", block)
+        self.assertIn("CANTONES_ONLY: 1", block)
+        self.assertIn("CANTONES_PUBLIC_ORIGIN: https://${VIDEO2TEXT_WEB_HOST}", block)
+        self.assertIn("/cantones\n", block)
+        context = (REPO_ROOT / "deploy/nas" / "../../apps/cantonese-demo").resolve()
+        dockerfile = (context / "../../deploy/nas/Dockerfile.cantones").resolve()
+        self.assertTrue(dockerfile.is_file())
+        ignore = (context / ".dockerignore").read_text(encoding="utf-8")
+        self.assertTrue(ignore.startswith("*\n"))
+        self.assertNotIn("!.data", ignore)
+        self.assertNotIn("!config", ignore)
+        self.assertIn("USER node", dockerfile.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

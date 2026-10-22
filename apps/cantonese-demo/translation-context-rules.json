@@ -1,0 +1,90 @@
+{
+  "version": "2026-10-20.general.2",
+  "scope": "Reusable source-grounded translation checks, no video-specific answers or quantities.",
+  "rules": [
+    {
+      "id": "degree",
+      "guidance": "咁滯 may indicate almost, nearly or approximately; do not turn a near event into an actual event, or into stagnation."
+    },
+    {
+      "id": "causal",
+      "guidance": "多得 may introduce because of / thanks to, not many reasons. Read the whole clause."
+    },
+    {
+      "id": "ugly",
+      "guidance": "難睇 describing poor market/chart performance can mean ugly, not hard to understand."
+    },
+    {
+      "id": "arithmetic",
+      "guidance": "Preserve arithmetic operators such as up volume minus down volume, all signs, thresholds and units exactly as spoken."
+    },
+    {
+      "id": "bond",
+      "guidance": "Distinguish issuance coupon from current yield. Do not add a technical classification when the source is ambiguous."
+    },
+    {
+      "id": "averages",
+      "guidance": "平均線 is moving average. Preserve the spoken period and daily/weekly timeframe."
+    },
+    {
+      "id": "currency",
+      "guidance": "蚊 alone does not identify a currency. Do not add USD or a currency symbol without source support."
+    },
+    {
+      "id": "breadth",
+      "guidance": "Keep each numerator with the correct denominator. Overlapping populations are not necessarily additional or disjoint sets."
+    },
+    {
+      "id": "level",
+      "guidance": "A downside target level is not a decline amount. Preserve fall to versus fall by."
+    },
+    {
+      "id": "midterm",
+      "guidance": "Political midterm year is not midyear or medium term. Preserve the supplied year, do not substitute a learned year."
+    },
+    {
+      "id": "modal",
+      "guidance": "Preserve actual versus conditional versus forecast. Do not weaken will to could or strengthen could to will."
+    },
+    {
+      "id": "subjects",
+      "guidance": "Keep each pronoun, issuer, stock, index and indicator attached to its own predicate. Identify what breaks below what."
+    },
+    {
+      "id": "buy-again",
+      "guidance": "重新買返 may mean investors buy again rather than a company repurchases shares. Use the actual subject."
+    },
+    {
+      "id": "continuity",
+      "guidance": "Read fractions, names, negation and complete clauses across cue boundaries; distribute meaning once, never repeat it in adjacent cues."
+    },
+    {
+      "id": "credit",
+      "guidance": "Creditworthiness, credit rating, yield and share price are distinct concepts. Unresolved acoustic terms must not be guessed from a chart alone."
+    },
+    {
+      "id": "source",
+      "guidance": "Do not add historical qualifiers, brands, chart figures, missing verbs or factual corrections from outside the supplied source."
+    },
+    {
+      "id": "relative-percent",
+      "guidance": "Preserve percent versus percentage points in each language. A bond-yield relative increase is not automatically a percentage-point increase."
+    },
+    {
+      "id": "acronym-expansion",
+      "guidance": "Preserve a spoken ticker/abbreviation. Do not invent an agency, organization or full name from its letters; keep the source name when no expansion is provided."
+    },
+    {
+      "id": "time-provenance",
+      "guidance": "Preserve each explicit year and relative time such as last week. A nearby earlier year cannot replace a different resistance-level year."
+    },
+    {
+      "id": "duration-and-comparatives",
+      "guidance": "Distinguish decline duration from decline amount, one-day pullback from one day of gains, slower from less slowly, and poor from by far the worst."
+    },
+    {
+      "id": "protect-good-lines",
+      "guidance": "A second translation pass can regress correct information. Review a local proposed edit against the source; do not assume a wholesale rewrite is better. Same-model clean audit is not independent acceptance."
+    }
+  ]
+}

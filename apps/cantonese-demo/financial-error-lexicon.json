@@ -1,0 +1,748 @@
+{
+  "version": "2026-10-21.3",
+  "purpose": "文字模型审定阶段的常见误识别学习词库；逐次匹配，禁止无语境全局替换。",
+  "precisionPolicy": {
+    "allowEvidenceBackedPrecision": true,
+    "conditions": [
+      "同一对象",
+      "同一时点或同一期限口径",
+      "单位一致",
+      "画面明确可读"
+    ],
+    "approvedExample": "本片 CoreWeave 发行票息：九点六利息可精确化为 9.625%，用户已接受。"
+  },
+  "rules": [
+    {
+      "id": "sp500",
+      "canonical": "S&P 500",
+      "pattern": "(?<![A-Za-z])(?:S\\s*(?:M\\s*)?P\\s*(?:五百八|五八|五百|500|58)|S\\s*[&＆]\\s*P\\s*(?:五百八|五八|58))(?![A-Za-z0-9])",
+      "context": "指数|指數|道指|股票|股市|市场|市場|Nas|S&P|S M P|S\\s+P",
+      "mode": "context",
+      "status": "confirmed",
+      "severity": "critical",
+      "category": "proper_name",
+      "examples": [
+        "S M P五八",
+        "SMP58",
+        "S M P五百",
+        "S&P五百八"
+      ],
+      "correctAliases": [
+        "S&P 500",
+        "S&P500",
+        "S&P五百",
+        "S&P 五百"
+      ],
+      "source": "用户确认的重复误识别"
+    },
+    {
+      "id": "sp-abbreviation",
+      "canonical": "S&P",
+      "pattern": "(?<![A-Za-z])S\\s*M\\s*P(?![A-Za-z]|\\s*(?:五|500|58))",
+      "context": "指数|指數|道指|创新高|創新高|Nas|S&P|股票",
+      "mode": "context",
+      "status": "confirmed",
+      "severity": "critical",
+      "category": "proper_name",
+      "examples": [
+        "S M P",
+        "SMP"
+      ],
+      "correctAliases": [
+        "S&P"
+      ],
+      "source": "用户确认的固定指数简称"
+    },
+    {
+      "id": "nas100",
+      "canonical": "Nas100",
+      "pattern": "(?<![A-Za-z])Nas(?:daq)?(?:嘅)?\\s*(?:一八|18)(?![A-Za-z0-9])",
+      "context": "指数|指數|道指|S&P|S M P|股票|支持位",
+      "mode": "context",
+      "status": "confirmed",
+      "severity": "critical",
+      "category": "proper_name",
+      "examples": [
+        "Nas一八",
+        "NAS18",
+        "Nas 18"
+      ],
+      "correctAliases": [
+        "Nas100",
+        "Nas一百",
+        "Nasdaq 100",
+        "NASDAQ100"
+      ],
+      "source": "用户确认的重复误识别"
+    },
+    {
+      "id": "ma200",
+      "canonical": "二百天平均线",
+      "pattern": "(?:二八|二十八|28)天(?:平均[线線]|均[线線])",
+      "context": "平均|均线|均線|反弹|反彈|支持|指数|指數|Russell|Nas|MA",
+      "mode": "visual",
+      "evidencePattern": "MA\\s*[（(]\\s*200\\s*[)）]",
+      "evidenceRole": "moving-average-period",
+      "status": "confirmed",
+      "severity": "critical",
+      "category": "number",
+      "examples": [
+        "二八天平均线",
+        "28天平均線"
+      ],
+      "correctAliases": [
+        "200天平均线",
+        "200天平均線",
+        "二百天平均线",
+        "二百天平均線"
+      ],
+      "source": "用户确认本片对应MA(200)；其他视频遇到同词必须以同期均线证据确定，不普遍断言28天均线不存在"
+    },
+    {
+      "id": "real-estate",
+      "canonical": "Real Estate",
+      "pattern": "(?<![A-Za-z])(?:U\\s*S\\s*T|V\\s*S\\s*T)(?![A-Za-z])",
+      "context": "板块|板塊|派息|consumer\\s*defensive|utility|地产|地產",
+      "mode": "visual",
+      "evidencePattern": "Real\\s+Estate",
+      "evidenceRole": "sector-name",
+      "status": "confirmed",
+      "severity": "critical",
+      "category": "proper_name",
+      "examples": [
+        "U S T",
+        "V S T",
+        "UST",
+        "VST"
+      ],
+      "correctAliases": [
+        "Real Estate",
+        "real estate"
+      ],
+      "source": "用户确认本片两次均指地产板块；其他语境不能仅凭UST/VST字符替换"
+    },
+    {
+      "id": "coreweave",
+      "canonical": "CoreWeave",
+      "pattern": "(?<![A-Za-z])Core\\s+(?:with|reef)(?![A-Za-z])",
+      "context": "公司|股价|股價|股票|债券|債券|利息|AI|A I",
+      "mode": "visual",
+      "evidencePattern": "CoreWeave",
+      "evidenceRole": "company-name",
+      "status": "confirmed",
+      "severity": "critical",
+      "category": "proper_name",
+      "examples": [
+        "Core with",
+        "core reef"
+      ],
+      "correctAliases": [
+        "CoreWeave"
+      ],
+      "source": "用户确认，并有原视频标题证据"
+    },
+    {
+      "id": "seoul-composite",
+      "canonical": "Seoul Composite",
+      "pattern": "(?<![A-Za-z])(?:S\\s*O\\s*L|Soul)\\s+Composite(?![A-Za-z])",
+      "context": "韩国|韓國|南韩|南韓|汉城|漢城|KOSPI|指数|指數",
+      "mode": "visual",
+      "evidencePattern": "Seoul\\s+Composite",
+      "evidenceRole": "index-name",
+      "status": "confirmed",
+      "severity": "critical",
+      "category": "proper_name",
+      "examples": [
+        "S O L Composite",
+        "Soul Composite"
+      ],
+      "correctAliases": [
+        "Seoul Composite",
+        "KOSPI"
+      ],
+      "source": "用户确认韩国指数，并有原视频图题证据"
+    },
+    {
+      "id": "market-breadth",
+      "canonical": "market breadth",
+      "pattern": "\\bmarket\\s+breath\\b",
+      "context": "market|股票|指数|指數|星期|S&P|S M P",
+      "mode": "context",
+      "status": "confirmed",
+      "severity": "critical",
+      "category": "term",
+      "examples": [
+        "market breath"
+      ],
+      "correctAliases": [
+        "market breadth"
+      ],
+      "source": "已核实的专业术语拼写"
+    },
+    {
+      "id": "bollinger-band",
+      "canonical": "Bollinger Band",
+      "pattern": "\\b(?:bowing\\s+jump|bollin)\\s+band\\b",
+      "context": "波动|波動|股价|股價|medium|道指|BB|band",
+      "mode": "visual",
+      "evidencePattern": "Bollinger|BB\\s*[（(]",
+      "evidenceRole": "indicator-name",
+      "status": "confirmed",
+      "severity": "critical",
+      "category": "term",
+      "examples": [
+        "bowing jump band",
+        "Bollin Band"
+      ],
+      "correctAliases": [
+        "Bollinger Band",
+        "Bollinger Bands"
+      ],
+      "source": "基线拼写错而ASR原本正确；正确词受保护，不回退"
+    },
+    {
+      "id": "shanghai-composite",
+      "canonical": "composite",
+      "pattern": "\\bcompost\\b",
+      "context": "上海|交易所|指数|指數",
+      "mode": "visual",
+      "evidencePattern": "Shanghai.*Composite",
+      "evidenceRole": "index-name",
+      "status": "confirmed",
+      "severity": "critical",
+      "category": "term",
+      "examples": [
+        "compost"
+      ],
+      "correctAliases": [
+        "composite"
+      ],
+      "source": "基线拼写问题，仅在上海指数语境下纠正"
+    },
+    {
+      "id": "midterm-label",
+      "canonical": "midterm",
+      "pattern": "\\bmidyear\\b",
+      "context": "midyear|midterm|十年|10年|债券|債券|yield|选举|選舉",
+      "mode": "visual",
+      "evidencePattern": "MIDTERM",
+      "evidenceRole": "chart-period-label",
+      "status": "confirmed",
+      "severity": "critical",
+      "category": "term",
+      "examples": [
+        "midyear"
+      ],
+      "correctAliases": [
+        "midterm",
+        "MIDTERM"
+      ],
+      "source": "本轮模型引入的错误；只在同期画面明确MIDTERM时修正，不把所有midyear全局改掉"
+    },
+    {
+      "id": "credit-term-review",
+      "canonical": "信貸",
+      "pattern": "信態",
+      "context": "credit|公司|信態",
+      "mode": "review",
+      "status": "unconfirmed",
+      "severity": "review",
+      "category": "term",
+      "examples": [
+        "信態"
+      ],
+      "correctAliases": [
+        "信貸",
+        "信贷"
+      ],
+      "source": "原音待确认，只触发回听，不自动替换"
+    },
+    {
+      "id": "bottom-term-review",
+      "canonical": "",
+      "pattern": "包含咗",
+      "context": "道指|反弹|反彈|位置|底|上翻",
+      "mode": "review",
+      "status": "unconfirmed",
+      "severity": "review",
+      "category": "term",
+      "examples": [
+        "包含咗"
+      ],
+      "correctAliases": [],
+      "source": "是否见底的原话待核，只触发回听，不猜词"
+    },
+    {
+      "id": "chart-bar",
+      "canonical": "bar",
+      "pattern": "(?<=嘅)[巴八](?=跌破)",
+      "context": "咁大嘅[巴八]跌破",
+      "contextScope": "row",
+      "mode": "visual",
+      "evidencePattern": "bar|柱[狀状]图|柱[狀状]圖|up volume",
+      "status": "confirmed",
+      "severity": "critical",
+      "category": "term",
+      "examples": [
+        "嘅巴跌破",
+        "嘅八跌破"
+      ],
+      "correctAliases": [
+        "bar"
+      ],
+      "source": "用户点名补充；本片原音识别为巴/八，图为volume柱体。只匹配明确柱体语境，需同期图证；不改巴西、巴士、八天。"
+    },
+    {
+      "id": "dont-miss-expression",
+      "canonical": "千祈唔好錯過",
+      "pattern": "千[祈其]冇[錯错][過过]",
+      "context": "video|视频|影片|今日",
+      "mode": "audio",
+      "evidencePattern": "千[祈其]唔好[錯错][過过]",
+      "status": "confirmed",
+      "severity": "critical",
+      "category": "term",
+      "examples": [
+        "千祈冇錯過"
+      ],
+      "correctAliases": [
+        "千祈唔好錯過",
+        "千祈唔好错过"
+      ],
+      "source": "本片原速和0.85倍音频复识一致支持唔好錯過；其他视频命中仍需原音复核，不凭语法猜否定。"
+    },
+    {
+      "id": "especially-fragment",
+      "canonical": "特別",
+      "pattern": "(?<!特)[別别](?=[係系]\\s*A\\s*I.*memory)",
+      "context": "科技|memory|semiconductor",
+      "mode": "audio",
+      "evidencePattern": "特[別别][係系]\\s*A\\s*I",
+      "status": "confirmed",
+      "severity": "critical",
+      "category": "term",
+      "examples": [
+        "別係A I嘅memory"
+      ],
+      "correctAliases": [
+        "特別"
+      ],
+      "source": "本片原速/慢速均识别特別。仅学习该财经中英夹杂片语；新音频必须重新核实漏字，不能所有別都加特。"
+    },
+    {
+      "id": "bullish-degree-expression",
+      "canonical": "相當之",
+      "pattern": "相[當当][於于]",
+      "context": "bullish|bearish",
+      "mode": "audio",
+      "evidencePattern": "相[當当]之\\s*(?:bullish|bearish)",
+      "status": "confirmed",
+      "severity": "critical",
+      "category": "term",
+      "examples": [
+        "相當於bullish"
+      ],
+      "correctAliases": [
+        "相當之",
+        "相当之"
+      ],
+      "source": "本片原速/慢速均支持相當之bullish。仅提示，需本句原音证据；不能把合法的相當於作全局替换。"
+    },
+    {
+      "id": "unlucky-expression",
+      "canonical": "唔好彩",
+      "pattern": "冇彩(?=嘅)",
+      "context": "如果你[系係]|蚀钱|蝕錢|好彩",
+      "mode": "audio",
+      "evidencePattern": "唔好彩",
+      "status": "confirmed",
+      "severity": "critical",
+      "category": "term",
+      "examples": [
+        "冇彩嘅"
+      ],
+      "correctAliases": [
+        "唔好彩"
+      ],
+      "source": "本片原速/慢速均为唔好彩；新视频须同句音频证据，不改冇彩色等其他意思。"
+    },
+    {
+      "id": "cantonese-warning-spelling",
+      "canonical": "千祈",
+      "pattern": "千其(?=唔好)",
+      "context": "千其唔好",
+      "contextScope": "row",
+      "mode": "context",
+      "status": "confirmed",
+      "severity": "critical",
+      "category": "term",
+      "examples": [
+        "千其唔好"
+      ],
+      "correctAliases": [
+        "千祈"
+      ],
+      "source": "粤语固定劝告表达千祈唔好。其/祈同音，按固定表达规范字修正，不改变否定和内容。"
+    },
+    {
+      "id": "pronoun-audio-review",
+      "canonical": "",
+      "pattern": "[話话]俾我知",
+      "context": "diffusion\\s*indicator",
+      "mode": "review",
+      "status": "unconfirmed",
+      "severity": "review",
+      "category": "term",
+      "examples": [
+        "話俾我知"
+      ],
+      "correctAliases": [],
+      "source": "本片原速识别你，慢速及Gladia偏我，证据冲突。代词不得固定映射。"
+    },
+    {
+      "id": "connector-audio-review",
+      "canonical": "",
+      "pattern": "咁之[後后]",
+      "context": "除咗|股票|能源",
+      "mode": "review",
+      "status": "unconfirmed",
+      "severity": "review",
+      "category": "term",
+      "examples": [
+        "咁之後"
+      ],
+      "correctAliases": [],
+      "source": "原速之后、慢速即系，Gladia省略该词，不能自动把时间关系变成推论关系。"
+    },
+    {
+      "id": "diversify-audio-review",
+      "canonical": "",
+      "pattern": "\\bdiversify(?=嘅|\\s*portfolio)",
+      "context": "portfolio",
+      "mode": "review",
+      "status": "unconfirmed",
+      "severity": "review",
+      "category": "term",
+      "examples": [
+        "diversify嘅portfolio"
+      ],
+      "correctAliases": [],
+      "source": "两次新识别均为diversify，基线diversified不能作为发音答案。保留口述词形，必要时人工核实。"
+    },
+    {
+      "category": "term",
+      "severity": "review",
+      "status": "unconfirmed",
+      "source": "新视频源稿审阅得到的通用提示；在盲测封存后记录，未回填本次封存稿。新任务仍须满足证据门槛。",
+      "id": "yield-rate-homophone",
+      "canonical": "孳息率",
+      "pattern": "知識率|知识率",
+      "context": "yield\\s*curve|收益率|債券|债券|息口",
+      "mode": "review",
+      "examples": [
+        "知識率"
+      ],
+      "correctAliases": [
+        "孳息率"
+      ]
+    },
+    {
+      "category": "term",
+      "severity": "critical",
+      "status": "confirmed",
+      "source": "新视频源稿审阅得到的通用提示；在盲测封存后记录，未回填本次封存稿。新任务仍须满足证据门槛。",
+      "id": "consumer-staples",
+      "canonical": "Consumer Staples",
+      "pattern": "\\bconsumer\\s+stable\\b",
+      "context": "板块|板塊|收息|Walmart|XLP|sector",
+      "mode": "visual",
+      "evidencePattern": "(?:Consumer|Cons)\\s+Staples|XLP.*Staples",
+      "examples": [
+        "consumer stable"
+      ],
+      "correctAliases": [
+        "Consumer Staples",
+        "consumer staples"
+      ]
+    },
+    {
+      "category": "term",
+      "severity": "critical",
+      "status": "confirmed",
+      "source": "新视频源稿审阅得到的通用提示；在盲测封存后记录，未回填本次封存稿。新任务仍须满足证据门槛。",
+      "id": "mcclellan-volume",
+      "canonical": "McClellan Volume Oscillator",
+      "pattern": "\\b(?:Column\\s+Volume|McCallum\\s+Williams|column\\s+volume)\\s+Oscillator\\b",
+      "context": "NYSE|纽约|紐約|common\\s*stock|超卖|超賣|volume",
+      "mode": "visual",
+      "evidencePattern": "McClellan\\s+Volume\\s+Oscillator",
+      "examples": [
+        "Column Volume Oscillator",
+        "McCallum Williams Oscillator"
+      ],
+      "correctAliases": [
+        "McClellan Volume Oscillator"
+      ]
+    },
+    {
+      "category": "term",
+      "severity": "critical",
+      "status": "confirmed",
+      "source": "新视频源稿审阅得到的通用提示；在盲测封存后记录，未回填本次封存稿。新任务仍须满足证据门槛。",
+      "id": "breadth-thrust",
+      "canonical": "breadth thrust",
+      "pattern": "\\bbreadth\\s+first\\b",
+      "context": "NYSE|纽约|紐約|EMA|up\\s*trend|0[.点點]4",
+      "mode": "visual",
+      "evidencePattern": "Breadth\\s+Thrust",
+      "examples": [
+        "breadth first"
+      ],
+      "correctAliases": [
+        "breadth thrust",
+        "Breadth Thrust"
+      ]
+    },
+    {
+      "category": "term",
+      "severity": "critical",
+      "status": "confirmed",
+      "source": "新视频源稿审阅得到的通用提示；在盲测封存后记录，未回填本次封存稿。新任务仍须满足证据门槛。",
+      "id": "skew-index",
+      "canonical": "SKEW index",
+      "pattern": "\\bskill\\s+index\\b",
+      "context": "professional|对冲|對沖|options?|投資|投资",
+      "mode": "visual",
+      "evidencePattern": "\\bSKEW\\b",
+      "examples": [
+        "skill index"
+      ],
+      "correctAliases": [
+        "SKEW index"
+      ]
+    },
+    {
+      "category": "term",
+      "severity": "critical",
+      "status": "confirmed",
+      "source": "新视频原速与慢速均为real estate，且XLRE图题对应。未来必须重新取得同句原音证据；USD常指美元，禁止只按字面或financial语境替换。",
+      "id": "real-estate-usd-review",
+      "canonical": "Real Estate",
+      "pattern": "(?<![A-Za-z])U\\s*S\\s*D(?![A-Za-z])",
+      "context": "收息股|地产板块|地產板塊",
+      "contextScope": "row",
+      "mode": "audio",
+      "evidencePattern": "real\\s+estate",
+      "examples": [
+        "U S D"
+      ],
+      "correctAliases": [
+        "Real Estate",
+        "real estate"
+      ]
+    },
+    {
+      "category": "term",
+      "severity": "review",
+      "status": "unconfirmed",
+      "source": "指科技七股篮子时提示复核标准名称；不能凭截图有MSFT就制造MS Seven。所有出现位置都应检查，禁止只改第一次。",
+      "id": "mag-seven-review",
+      "canonical": "Mag Seven",
+      "pattern": "\\b(?:Mac|Max|MS)\\s+Seven\\b",
+      "context": "technology|科技|七只|七隻|Nasdaq|NASDAQ",
+      "mode": "review",
+      "examples": [
+        "Mac Seven",
+        "Max Seven",
+        "MS Seven"
+      ],
+      "correctAliases": [
+        "Mag Seven",
+        "Magnificent Seven",
+        "Mag 7"
+      ]
+    },
+    {
+      "category": "term",
+      "severity": "review",
+      "status": "unconfirmed",
+      "source": "品牌与一般patron有别。只能触发原音/可靠同期品牌图核实，不能因为本次英文基线写Patreon而对所有新视频直接替换。",
+      "id": "patreon-review",
+      "canonical": "Patreon",
+      "pattern": "\\bpatron(?=\\s+subscribe)",
+      "context": "subscribe|订阅|訂閱|会员|會員",
+      "contextScope": "row",
+      "mode": "review",
+      "examples": [
+        "patron subscribe"
+      ],
+      "correctAliases": [
+        "Patreon"
+      ]
+    },
+    {
+      "id": "remaining-momentum-expression",
+      "canonical": "氣剩",
+      "pattern": "(?<=冇乜)[氣气][靜静]",
+      "context": "exhaustion|up\\s*trend|升[勢势]|动力|動力",
+      "mode": "review",
+      "status": "unconfirmed",
+      "severity": "review",
+      "category": "term",
+      "examples": [
+        "冇乜氣靜",
+        "冇乜气静"
+      ],
+      "correctAliases": [
+        "冇乜氣剩",
+        "冇乜气剩"
+      ],
+      "source": "固定表达提示；本次原速复识为气剩、慢速为气正。新视频仍须原音及上下文审定，不能把图证当声音。"
+    },
+    {
+      "id": "concessive-connector-review",
+      "canonical": "",
+      "pattern": "所以(?=我[哋们們]仍然)",
+      "context": "但[系係是]|然而|mid.?term",
+      "mode": "review",
+      "status": "unconfirmed",
+      "severity": "review",
+      "category": "term",
+      "examples": [
+        "所以我哋仍然"
+      ],
+      "correctAliases": [],
+      "source": "所以/虽然的近音会改变关系；本次原速和慢速冲突，只触发审阅，禁止固定替换。"
+    },
+    {
+      "id": "measure-verb-review",
+      "canonical": "量度",
+      "pattern": "兩國|两国",
+      "context": "MOVE|波動指數|波动指数|債券市場|债券市场",
+      "contextScope": "row",
+      "mode": "review",
+      "status": "unconfirmed",
+      "severity": "review",
+      "category": "term",
+      "examples": [
+        "兩國債券市場"
+      ],
+      "correctAliases": [
+        "量度"
+      ],
+      "source": "债市波动定义中疑为量度；不能凭金融语境把合法两国直接改掉。"
+    },
+    {
+      "id": "closing-preview-review",
+      "canonical": "preview",
+      "pattern": "(?<![A-Za-z])p\\s*v(?![A-Za-z])",
+      "context": "今日.*(?:講到|讲到|呢[度處处])",
+      "contextScope": "row",
+      "mode": "review",
+      "status": "unconfirmed",
+      "severity": "review",
+      "category": "term",
+      "examples": [
+        "今日嘅p v就講到呢度"
+      ],
+      "correctAliases": [
+        "preview"
+      ],
+      "source": "片尾PV可能是preview；只在同片用途及原音支持时展开，不改财务现值PV。"
+    },
+    {
+      "id": "homebuilder-sound",
+      "canonical": "homebuilder",
+      "pattern": "空[标標]",
+      "context": "housing|房|股票",
+      "evidencePattern": "home\\s*builder",
+      "category": "proper_name",
+      "contextScope": "neighbors",
+      "mode": "review",
+      "status": "unconfirmed",
+      "severity": "critical",
+      "source": "本轮学习的回听触发词；不自动替换，不把单次识别或英文基线当音频真值"
+    },
+    {
+      "id": "inside-bar-sound",
+      "canonical": "inside bar",
+      "pattern": "[烟煙]塞[吧巴]",
+      "context": "harami|doji|candle|蜡烛|蠟燭|孕线|孕線",
+      "evidencePattern": "inside\\s*bar",
+      "category": "pattern",
+      "contextScope": "neighbors",
+      "mode": "review",
+      "status": "unconfirmed",
+      "severity": "critical",
+      "source": "本轮学习的回听触发词；不自动替换，不把单次识别或英文基线当音频真值"
+    },
+    {
+      "id": "unresolved-half-yao",
+      "canonical": "[待音证核实]",
+      "pattern": "半腰",
+      "context": "futures|market|利率|债|債",
+      "evidencePattern": "bond\\s*yields?",
+      "category": "ambiguous_sound",
+      "contextScope": "neighbors",
+      "mode": "review",
+      "status": "unconfirmed",
+      "severity": "critical",
+      "source": "本轮学习的回听触发词；不自动替换，不把单次识别或英文基线当音频真值"
+    }
+  ],
+  "documentCorrections": [
+    {
+      "id": "year-2018-example",
+      "sourceVideoSha256": "27256df61c18e6ef90dc293c6203c1e1ff0562019b1075843012ab00fce4404b",
+      "rowIds": [
+        "s0032"
+      ],
+      "fromExamples": [
+        "二零二八年",
+        "2028年"
+      ],
+      "to": "二零一八年",
+      "evidenceText": "2018 MIDTERM 10YR YIELD",
+      "decision": "用户确认的本片年份纠错；只用于本片该条目，禁止形成2028→2018的通用替换规则"
+    },
+    {
+      "id": "coreweave-coupon-precision",
+      "kind": "precision",
+      "sourceVideoSha256": "27256df61c18e6ef90dc293c6203c1e1ff0562019b1075843012ab00fce4404b",
+      "rowIds": [
+        "s0069"
+      ],
+      "fromExamples": [
+        "九點六利息"
+      ],
+      "to": "9.625%",
+      "evidenceText": "CoreWeave | 9.625%, July 15, 2032",
+      "decision": "用户接受的发行票息精确化；不用于后一句的当前收益率，不把九点六通用改成9.625。"
+    }
+  ],
+  "protectedTerms": [
+    "S&P 500",
+    "S&P500",
+    "S&P五百",
+    "S&P 五百",
+    "S&P",
+    "Nas100",
+    "Nas一百",
+    "Nasdaq 100",
+    "NASDAQ100",
+    "CoreWeave",
+    "Seoul Composite",
+    "Real Estate",
+    "Bollinger Band",
+    "composite",
+    "market breadth",
+    "midterm",
+    "Amazon",
+    "Google",
+    "Mag Seven",
+    "McClellan Volume Oscillator",
+    "breadth thrust",
+    "SKEW index",
+    "UGA"
+  ]
+}

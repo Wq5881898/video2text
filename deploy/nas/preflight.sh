@@ -31,6 +31,8 @@ required=(
   VIDEO2TEXT_CONFIG_DIR
   VIDEO2TEXT_SHARED_SECRET
   VIDEO2TEXT_PROXY_TOKEN
+  VIDEO2TEXT_CANTONES_USER
+  VIDEO2TEXT_CANTONES_PASSWORD_HASH
 )
 for name in "${required[@]}"; do
   test -n "${!name:-}" || fail "$name is empty"
@@ -42,6 +44,7 @@ done
 [[ "$VIDEO2TEXT_PROXY_TOKEN" != replace-* ]] || fail "replace VIDEO2TEXT_PROXY_TOKEN"
 ((${#VIDEO2TEXT_SHARED_SECRET} >= 32)) || fail "VIDEO2TEXT_SHARED_SECRET must be at least 32 characters"
 ((${#VIDEO2TEXT_PROXY_TOKEN} >= 32)) || fail "VIDEO2TEXT_PROXY_TOKEN must be at least 32 characters"
+[[ "$VIDEO2TEXT_CANTONES_PASSWORD_HASH" == \$2* ]] || fail "set a Caddy bcrypt hash for VIDEO2TEXT_CANTONES_PASSWORD_HASH"
 
 env_mode=$(stat -c '%a' .env)
 [[ "$env_mode" == "600" || "$env_mode" == "400" ]] \
@@ -54,7 +57,7 @@ findmnt --mountpoint "$storage_mount" >/dev/null 2>&1 \
 [[ "$data_dir" == "$storage_mount"/* ]] \
   || fail "VIDEO2TEXT_DATA_DIR must be a child of VIDEO2TEXT_STORAGE_MOUNT"
 
-for directory in uploads media work results state; do
+for directory in uploads media work results state cantones; do
   test -d "$VIDEO2TEXT_DATA_DIR/$directory" || fail "missing directory: $VIDEO2TEXT_DATA_DIR/$directory"
   [[ "$(stat -c '%u' "$VIDEO2TEXT_DATA_DIR/$directory")" == "1000" ]] \
     || fail "$VIDEO2TEXT_DATA_DIR/$directory must be owned by UID 1000"
@@ -77,7 +80,7 @@ rm -f "$target"
 docker compose config --quiet
 
 printf 'Preflight passed. Next commands:\n'
-printf '  docker compose build worker\n'
+printf '  docker compose build worker cantones\n'
 printf '  docker compose up -d\n'
 printf '  docker compose ps\n'
 printf '  curl --fail %s/health\n' "$VIDEO2TEXT_PUBLIC_ORIGIN"

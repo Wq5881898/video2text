@@ -18,7 +18,13 @@ for block in caddy.split('    log {')[1:]:
                  'request>uri query', 'delete signature'):
         assert rule in block, 'Missing log redaction rule'
 route = caddy.split('    route {', 1)[1]
-assert 'basic_auth' not in caddy.split('{$VIDEO2TEXT_PUBLIC_HOST}', 1)[0]
+web = caddy.split('{$VIDEO2TEXT_PUBLIC_HOST}', 1)[0]
+demo, other = web.split('        handle @cantones {', 1)
+protected, rest = other.split('        handle @control {', 1)
+assert 'basic_auth' in protected
+assert '{$VIDEO2TEXT_CANTONES_PASSWORD_HASH}' in protected
+assert 'reverse_proxy cantones:4178' in protected
+assert 'basic_auth' not in demo + rest, 'Existing public routes must stay public'
 assert route.index('redir / /nas 302') < route.index('handle @control')
 assert '-hooks-http-backoff=2s' in compose
 assert '127.0.0.1:8081:8081' in compose
@@ -27,5 +33,10 @@ assert 'VIDEO2TEXT_ENABLED_TRANSLATION_PROVIDERS=minimax' in Path('.env.example'
 for name, end in [('worker', 'cleanup'), ('tusd', 'caddy')]:
     block = compose.split('  '+name+':\n', 1)[1].split('\n  '+end+':', 1)[0]
     assert '\n    ports:' not in block, name+' must not expose host ports'
+cantones = compose.split('  cantones:\n', 1)[1].split('\n  cleanup:', 1)[0]
+assert '\n    ports:' not in cantones
+assert 'CANTONES_ONLY: 1' in cantones
+assert 'CANTONES_PUBLIC_ORIGIN: https://${VIDEO2TEXT_WEB_HOST}' in cantones
+assert '${VIDEO2TEXT_DATA_DIR:?Set VIDEO2TEXT_DATA_DIR in .env}/cantones' in cantones
 print('Non-billable configuration assertions passed')
 PY
