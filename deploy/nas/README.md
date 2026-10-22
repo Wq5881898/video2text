@@ -10,11 +10,12 @@ Docker accepts local uploads only, not media URL input. Standalone does not requ
 
 - The Cantonese video-to-English demo is a separate Node/FFmpeg service under `/cantones`, with its own prefix-wide Basic Auth. Existing Docker V3 pages and APIs keep their current public-access policy. Fetch the GitHub delivery branch and follow [the incremental deployment instructions](CANTONES_DEPLOYMENT.md); no ZIP transfer is required.
 - Caddy publishes 80/443 for the DNS-only `stt` and `upload` hostnames, serves the static web app, and exposes the existing Sub2API allowlist only on `127.0.0.1:8081`. Existing Cloudflare Tunnel routing remains unchanged. Worker and tusd publish no host ports.
+- The Caddy service runs the locally built `sub2api-audit-caddy:2.11.4-response-v1` image (official Caddy `2.11.4` plus the local `response_audit` module, source kept in `/opt/sub2api-input-audit/caddy-response-source`). On the loopback `8081` listener it spools whitelisted Sub2API responses to `/config/sub2api-input-audit/responses` and writes filtered request metadata to `/config/sub2api-input-audit/input.log` (rotating). Request metadata kept: path, method, status, duration, `audit_id`, `source_ip`. **Full request-body logging is temporarily disabled** — `{http.request.body}` buffers whole LLM payloads in RAM and OOM-killed this container on 2026-10-22; it must never be re-enabled on upload, media or tus paths. The service keeps a 1 GiB memory cap and 10 MiB × 3 container log rotation. Sub2API streaming is unaffected (`flush_interval -1`).
 - tusd receives resumable browser uploads and disables its public download endpoint.
 - The single-worker Flask/Gunicorn service validates upload tickets, queues SQLite jobs, provides signed media reads to Gladia, runs the shared pipeline, and exposes protected status/result APIs.
 - Successful media and work files are removed immediately after the result and SQLite completion state are durable. Failed/partially completed media has seven-day fallback retention; incomplete uploads expire after 24 hours. The capacity high-water threshold is 80%. TXT/SRT results and task records are retained long-term; cleanup must not delete active jobs or durable results.
 
-The Compose file pins Caddy `2.11.4-alpine` and tusd `v2.9.2` instead of using floating `latest` tags. Review upstream releases and update these pins deliberately after a staging smoke test.
+The Compose file pins tusd `v2.9.2` instead of using floating `latest` tags. Caddy uses the local audit image above rather than the plain `caddy:2.11.4-alpine` upstream tag. Review upstream releases and update these pins deliberately after a staging smoke test.
 
 ## Host preparation
 

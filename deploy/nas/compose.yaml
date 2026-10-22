@@ -28,8 +28,17 @@ x-worker: &worker
 
 services:
   caddy:
-    image: caddy:2.11.4-alpine
+    # Custom image: official Caddy 2.11.4 plus the local `response_audit` module
+    # (source: /opt/sub2api-input-audit/caddy-response-source). Sub2API response
+    # spooling depends on it; do not swap back to the plain official image.
+    image: sub2api-audit-caddy:2.11.4-response-v1
     restart: unless-stopped
+    # Cap the docker json-file driver. Unbounded container logs grow without limit.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       VIDEO2TEXT_PUBLIC_HOST: ${VIDEO2TEXT_PUBLIC_HOST:?Set VIDEO2TEXT_PUBLIC_HOST in .env}
       VIDEO2TEXT_WEB_HOST: ${VIDEO2TEXT_WEB_HOST:?Set VIDEO2TEXT_WEB_HOST in .env}
@@ -50,6 +59,13 @@ services:
       - tusd
       - worker
       - cantones
+    # Memory ceiling. The Sub2API response spool streams to disk, but Caddy's
+    # request-body placeholder buffers whole request bodies in RAM and
+    # OOM-killed this container three times on 2026-10-22. That placeholder is
+    # now disabled in the Caddyfile; this cap keeps any future regression
+    # self-limiting instead of taking down the whole host.
+    mem_limit: 1g
+    memswap_limit: 1g
     networks:
       - edge
       - egress

@@ -113,17 +113,39 @@
 }
 
 http://:8081 {
+    @audit_input {
+        method POST
+        path /v1/chat/completions /v1/responses /v1/responses/* /v1/messages /responses /responses/* /chat/completions /v1beta/models/* /backend-api/codex/responses /backend-api/codex/responses/*
+    }
+    @audit_skip {
+        not {
+            method POST
+            path /v1/chat/completions /v1/responses /v1/responses/* /v1/messages /responses /responses/* /chat/completions /v1beta/models/* /backend-api/codex/responses /backend-api/codex/responses/*
+        }
+    }
+    log_skip @audit_skip
+    # Request metadata only. Full request-body capture is TEMPORARILY DISABLED:
+    # Caddy's request-body placeholder buffers whole LLM payloads in RAM and
+    # OOM-killed this container three times on 2026-10-22. Path, method, status,
+    # duration, audit_id and source_ip remain logged. Do not re-enable body
+    # capture here, and never enable it on upload, media or tus paths.
+    log_append @audit_input <audit_id {http.request.uuid}
+    log_append @audit_input <source_ip {http.request.header.CF-Connecting-IP}
+
     @sub2api {
         path /v1/* /v1beta/* /backend-api/codex/* /responses /responses/* /models /models/* /chat/completions /messages/count_tokens /alpha/search /embeddings
     }
 
     handle @sub2api {
-        reverse_proxy {$VIDEO2TEXT_SUB2API_UPSTREAM} {
-            flush_interval -1
-            header_up X-Forwarded-Proto https
-            transport http {
-                read_timeout 3600s
-                write_timeout 3600s
+        route {
+            response_audit @audit_input /config/sub2api-input-audit/responses
+            reverse_proxy {$VIDEO2TEXT_SUB2API_UPSTREAM} {
+                flush_interval -1
+                header_up X-Forwarded-Proto https
+                transport http {
+                    read_timeout 3600s
+                    write_timeout 3600s
+                }
             }
         }
     }
@@ -133,14 +155,20 @@ http://:8081 {
     }
 
     log {
-        output stdout
+        output file /config/sub2api-input-audit/input.log {
+            roll_size 16MiB
+            roll_keep 8
+            roll_keep_for 72h
+            roll_uncompressed
+        }
         format filter {
             wrap json
             fields {
-                request>headers>X-Upload-Token delete
-                request>headers>X-Video2Text-Proxy-Token delete
-                request>headers>X-Video2text-Proxy-Token delete
+                request>headers delete
                 request>uri query {
+                    delete key
+                    delete api_key
+                    delete token
                     delete signature
                 }
             }

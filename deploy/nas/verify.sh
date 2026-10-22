@@ -11,12 +11,36 @@ from pathlib import Path
 caddy = Path('Caddyfile').read_text()
 compose = Path('compose.yaml').read_text()
 assert 'log_credentials' not in caddy
-for block in caddy.split('    log {')[1:]:
+blocks = caddy.split('    log {')[1:]
+for block in blocks:
     for rule in ('format filter', 'wrap json',
-                 'request>headers>X-Upload-Token delete',
-                 'request>headers>X-Video2text-Proxy-Token delete',
                  'request>uri query', 'delete signature'):
         assert rule in block, 'Missing log redaction rule'
+# Public hosts redact the custom upload/proxy headers individually; the Sub2API
+# block drops every request header wholesale plus key/api_key/token queries.
+public_blocks = [b for b in blocks if 'output stdout' in b]
+for block in public_blocks:
+    for rule in ('request>headers>X-Upload-Token delete',
+                 'request>headers>X-Video2text-Proxy-Token delete'):
+        assert rule in block, 'Missing public host log redaction rule'
+for block in blocks:
+    if 'output file /config/sub2api-input-audit' in block:
+        assert 'request>headers delete' in block
+        for field in ('key', 'api_key', 'token', 'signature'):
+            assert 'delete ' + field in block
+# Full request bodies must never be logged: {http.request.body} buffers whole
+# payloads in RAM and OOM-killed this container on 2026-10-22.
+for line in caddy.splitlines():
+    if 'log_append' in line and '{' in line:
+        assert '{http.request.body}' not in line, 'Full request body logging must stay off'
+assert 'log_append @audit_input <audit_id {http.request.uuid}' in caddy
+assert 'response_audit @audit_input' in caddy
+assert 'flush_interval -1' in caddy
+# The Sub2API response spool needs the locally built Caddy image and its caps.
+caddy_service = compose.split('  caddy:\n', 1)[1].split('\n  tusd:', 1)[0]
+assert 'image: sub2api-audit-caddy:2.11.4-response-v1' in caddy_service
+assert 'mem_limit: 1g' in caddy_service
+assert 'memswap_limit: 1g' in caddy_service
 route = caddy.split('    route {', 1)[1]
 web = caddy.split('{$VIDEO2TEXT_PUBLIC_HOST}', 1)[0]
 demo, other = web.split('        handle @cantones {', 1)

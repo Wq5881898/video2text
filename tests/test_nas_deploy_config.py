@@ -139,14 +139,46 @@ class NasDeployConfigTests(unittest.TestCase):
         for block in (web, upload, sub2api):
             self.assertIn("format filter {", block)
             self.assertIn("wrap json", block)
+            # The Sub2API block deletes all request headers wholesale instead.
+            self.assertIn("request>uri query {", block)
+            self.assertIn("delete signature", block)
+        for block in (web, upload):
             self.assertIn("request>headers>X-Upload-Token delete", block)
             self.assertIn("request>headers>X-Video2Text-Proxy-Token delete", block)
             # Go canonicalizes this header to Video2text, not Video2Text.
             self.assertIn("request>headers>X-Video2text-Proxy-Token delete", block)
-            self.assertIn("request>uri query {", block)
-            self.assertIn("delete signature", block)
+        self.assertIn("request>headers delete", sub2api)
+        for field in ("key", "api_key", "token", "signature"):
+            self.assertIn(f"delete {field}", sub2api)
         self.assertNotIn("log_credentials", caddy)
         self.assertIn("flush_interval -1", sub2api)
+
+    def test_caddy_never_logs_full_request_bodies(self):
+        """A full-body placeholder buffers LLM payloads in RAM and OOM-killed Caddy."""
+        caddy = (REPO_ROOT / "deploy/nas/Caddyfile").read_text(encoding="utf-8")
+        body_lines = [
+            line for line in caddy.splitlines()
+            if "log_append" in line and "{" in line
+        ]
+        for line in body_lines:
+            self.assertNotIn("{http.request.body}", line)
+            self.assertNotIn("{http.request.uri.query", line.replace("uri query", ""))
+        # Metadata auditing of the whitelisted Sub2API POSTs stays enabled.
+        self.assertIn("log_append @audit_input <audit_id {http.request.uuid}", caddy)
+        self.assertIn("response_audit @audit_input", caddy)
+        # Upload, media and tus paths must never buffer bodies.
+        web, remainder = caddy.split("{$VIDEO2TEXT_PUBLIC_HOST}", 1)
+        upload, sub2api = remainder.split("http://:8081", 1)
+        self.assertNotIn("{http.request.body}", web + upload)
+
+    def test_caddy_service_keeps_audit_image_and_limits(self):
+        compose = (REPO_ROOT / "deploy/nas/compose.yaml").read_text(encoding="utf-8")
+        caddy_block = compose.split("  caddy:\n", 1)[1].split("\n  tusd:", 1)[0]
+        self.assertIn("image: sub2api-audit-caddy:2.11.4-response-v1", caddy_block)
+        self.assertIn("mem_limit: 1g", caddy_block)
+        self.assertIn("memswap_limit: 1g", caddy_block)
+        self.assertIn('max-size: "10m"', caddy_block)
+        self.assertIn("response_audit", (REPO_ROOT / "deploy/nas/Caddyfile").read_text(encoding="utf-8"))
 
     def test_verify_script_is_executable_and_non_billable(self):
         script = REPO_ROOT / "deploy/nas/verify.sh"
