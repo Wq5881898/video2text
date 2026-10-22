@@ -117,7 +117,7 @@ class NasDeployConfigTests(unittest.TestCase):
                     status, headers = request_status(path)
                     self.assertNotEqual(status, 401)
                     self.assertNotIn("WWW-Authenticate", headers)
-                for path in ("/cantones", "/cantones/", "/cantones/api/health", "/cantones/api/jobs"):
+                for path in ("/cantones", "/cantones/", "/cantones/api/config", "/cantones/api/jobs"):
                     status, headers = request_status(path)
                     self.assertEqual(status, 401, path)
                     self.assertIn("WWW-Authenticate", headers)

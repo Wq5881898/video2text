@@ -78,9 +78,10 @@ tests using the available host runtime or a disposable matching container.
   FFprobe, read-only configuration access and the persistent demo directory work
   as UID 1000. The Docker build and Caddy runtime checks must actually be run on
   the NAS; Windows-only unit tests cannot establish these results.
-- Unauthenticated `/cantones`, `/cantones/`, `/cantones/api/health` and
+- Unauthenticated `/cantones`, `/cantones/`, `/cantones/api/config` and
   `/cantones/api/jobs` return 401; correct credentials give 200 for the page and
-  health endpoint. The whole prefix must be protected, not just the HTML page.
+  configuration endpoint. This GET only inspects local settings/cooldown records;
+  it does not call the provider. The whole prefix must be protected, not just the HTML page.
   Credentials should use a root-only temporary curl config, not command-line
   arguments or shell tracing.
 - The original `/` still returns 302 to `/nas`; `/nas` is public. Existing
