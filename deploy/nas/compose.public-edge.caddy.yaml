@@ -1,0 +1,53 @@
+# 候选：官方 Caddy 入口的 compose 片段（**候选文件，未部署**）
+#
+# 用途：把现网 deploy/nas/compose.yaml 中的 caddy 服务替换为下面这段，
+# 即可让官方 Caddy 独占 80/443，并把 8081 让给独立审计代理。
+#
+# 与现网 caddy 服务的差异：
+#  - image 改为官方 caddy:2.11.4-alpine（response_audit 移入独立审计代理）
+#  - 移除 127.0.0.1:8081:8081 端口映射（该端口由审计代理占用）
+#  - Caddyfile 指向 Caddyfile.public-edge
+#  - 保留 1 GiB 内存上限与日志轮转
+#
+# 切换与回滚见私有仓库 caddy-response-audit 的 deploy/cutover.sh。
+# 回滚锚点：docker-v3 的 255e512e8e12fd43b0c7066d2cfa672b27543335。
+
+  caddy:
+    # Official Caddy only. The response_audit module now lives in the
+    # separate Sub2API audit proxy (private repo: caddy-response-audit),
+    # which owns 127.0.0.1:8081 for cloudflared.
+    image: caddy:2.11.4-alpine
+    restart: unless-stopped
+    # Cap the docker json-file driver. Unbounded container logs grow without limit.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      VIDEO2TEXT_PUBLIC_HOST: ${VIDEO2TEXT_PUBLIC_HOST:?Set VIDEO2TEXT_PUBLIC_HOST in .env}
+      VIDEO2TEXT_WEB_HOST: ${VIDEO2TEXT_WEB_HOST:?Set VIDEO2TEXT_WEB_HOST in .env}
+      VIDEO2TEXT_CANTONES_USER: ${VIDEO2TEXT_CANTONES_USER:?Set VIDEO2TEXT_CANTONES_USER in .env}
+      VIDEO2TEXT_CANTONES_PASSWORD_HASH: ${VIDEO2TEXT_CANTONES_PASSWORD_HASH:?Set VIDEO2TEXT_CANTONES_PASSWORD_HASH in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+      # No 8081 mapping here: that port is owned by the independent audit
+      # proxy, and cloudflared connects to it directly.
+    volumes:
+      - ./Caddyfile.public-edge:/etc/caddy/Caddyfile:ro
+      - ../../apps/web/public:/srv/video2text-web:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - tusd
+      - worker
+      - cantones
+    # Memory ceiling. The full request-body placeholder buffers whole bodies
+    # in RAM and OOM-killed this container three times on 2026-10-22. That
+    # placeholder stays disabled; this cap keeps any regression self-limiting.
+    mem_limit: 1g
+    memswap_limit: 1g
+    networks:
+      - edge

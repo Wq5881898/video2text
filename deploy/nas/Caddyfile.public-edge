@@ -1,0 +1,127 @@
+# Caddy：公网入口（官方镜像层）
+#
+# 本文件由现网 Caddyfile 机械生成：保留原有两个站点块（web host 与 public
+# host）逐字不变，仅移除 8081 的 Sub2API 审计块——该职责移入独立的
+# Sub2API 审计代理（私有仓库 caddy-response-audit），由它独占
+# 127.0.0.1:8081，cloudflared 直连该端口，公网入口不做第二跳。
+#
+# 因此本文件不含 response_audit，也不含 {http.request.body} 完整正文采集
+# （后者于 2026-10-22 因 OOM 停用，保持关闭）。
+#
+# 切换与回滚：私有仓库 caddy-response-audit 的 deploy/cutover.sh
+# 回滚锚点：docker-v3 的 255e512e8e12fd43b0c7066d2cfa672b27543335
+
+{$VIDEO2TEXT_WEB_HOST} {
+    encode zstd gzip
+
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        X-Frame-Options "DENY"
+    }
+
+    @control path /api/*
+    @jobs path /jobs/*
+    @nas path /nas
+    @mobile path /mobile
+    @cantones path /cantones /cantones/*
+
+    route {
+        redir / /nas 302
+
+        handle @cantones {
+            basic_auth {
+                {$VIDEO2TEXT_CANTONES_USER} {$VIDEO2TEXT_CANTONES_PASSWORD_HASH}
+            }
+            reverse_proxy cantones:4178
+        }
+
+        handle @control {
+            reverse_proxy worker:8080
+        }
+
+        handle @jobs {
+            root * /srv/video2text-web
+            rewrite * /job.html
+            file_server
+        }
+
+        handle @nas {
+            root * /srv/video2text-web
+            rewrite * /index.html
+            file_server
+        }
+
+        handle @mobile {
+            root * /srv/video2text-web
+            rewrite * /mobile.html
+            file_server
+        }
+
+        handle {
+            root * /srv/video2text-web
+            file_server
+        }
+    }
+
+    log {
+        output stdout
+        format filter {
+            wrap json
+            fields {
+                request>headers>X-Upload-Token delete
+                request>headers>X-Video2Text-Proxy-Token delete
+                request>headers>X-Video2text-Proxy-Token delete
+                request>uri query {
+                    delete signature
+                }
+            }
+        }
+    }
+}
+
+{$VIDEO2TEXT_PUBLIC_HOST} {
+    encode zstd gzip
+
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+    }
+
+    @uploads path /files /files/*
+    handle @uploads {
+        reverse_proxy tusd:8080
+    }
+
+    @media path /media/*
+    handle @media {
+        reverse_proxy worker:8080
+    }
+
+    @health path /health
+    handle @health {
+        reverse_proxy worker:8080
+    }
+
+    handle {
+        respond 404
+    }
+
+    log {
+        output stdout
+        format filter {
+            wrap json
+            fields {
+                request>headers>X-Upload-Token delete
+                request>headers>X-Video2Text-Proxy-Token delete
+                request>headers>X-Video2text-Proxy-Token delete
+                request>uri query {
+                    delete signature
+                }
+            }
+        }
+    }
+}
+
