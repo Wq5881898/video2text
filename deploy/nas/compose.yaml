@@ -28,10 +28,8 @@ x-worker: &worker
 
 services:
   caddy:
-    # Custom image: official Caddy 2.11.4 plus the local `response_audit` module
-    # (source: /opt/sub2api-input-audit/caddy-response-source). Sub2API response
-    # spooling depends on it; do not swap back to the plain official image.
-    image: sub2api-audit-caddy:2.11.4-response-v1
+    # Public STT/upload edge only. Sub2API auditing runs in its own Compose project.
+    image: caddy:2.11.4-alpine
     restart: unless-stopped
     # Cap the docker json-file driver. Unbounded container logs grow without limit.
     logging:
@@ -42,28 +40,22 @@ services:
     environment:
       VIDEO2TEXT_PUBLIC_HOST: ${VIDEO2TEXT_PUBLIC_HOST:?Set VIDEO2TEXT_PUBLIC_HOST in .env}
       VIDEO2TEXT_WEB_HOST: ${VIDEO2TEXT_WEB_HOST:?Set VIDEO2TEXT_WEB_HOST in .env}
-      VIDEO2TEXT_SUB2API_UPSTREAM: ${VIDEO2TEXT_SUB2API_UPSTREAM:-10.0.0.218:8080}
       VIDEO2TEXT_CANTONES_USER: ${VIDEO2TEXT_CANTONES_USER:?Set VIDEO2TEXT_CANTONES_USER in .env}
       VIDEO2TEXT_CANTONES_PASSWORD_HASH: ${VIDEO2TEXT_CANTONES_PASSWORD_HASH:?Set VIDEO2TEXT_CANTONES_PASSWORD_HASH in .env}
     ports:
       - "80:80"
       - "443:443"
       - "443:443/udp"
-      - "127.0.0.1:8081:8081"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ../../apps/web/public:/srv/video2text-web:ro
       - caddy_data:/data
-      - caddy_config:/config
+      - public_edge_config:/config
     depends_on:
       - tusd
       - worker
       - cantones
-    # Memory ceiling. The Sub2API response spool streams to disk, but Caddy's
-    # request-body placeholder buffers whole request bodies in RAM and
-    # OOM-killed this container three times on 2026-10-22. That placeholder is
-    # now disabled in the Caddyfile; this cap keeps any future regression
-    # self-limiting instead of taking down the whole host.
+    # Keep the existing memory ceiling and log rotation on the official edge.
     mem_limit: 1g
     memswap_limit: 1g
     networks:
@@ -146,8 +138,14 @@ services:
       - maintenance
 
 volumes:
+  # Existing TLS storage remains owned by the public edge.
   caddy_data:
+  # Separate config storage; the legacy config volume contains audit spool files.
+  public_edge_config:
+  # Preserve the legacy audit volume outside this project's deletion lifecycle.
   caddy_config:
+    external: true
+    name: video2text-nas_caddy_config
 
 networks:
   edge:
