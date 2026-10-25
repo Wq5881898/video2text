@@ -33,25 +33,22 @@ for block in blocks:
 for line in caddy.splitlines():
     if 'log_append' in line and '{' in line:
         assert '{http.request.body}' not in line, 'Full request body logging must stay off'
-assert 'log_append @audit_input <audit_id {http.request.uuid}' in caddy
-assert 'response_audit @audit_input' in caddy
-assert 'flush_interval -1' in caddy
-# The Sub2API response spool needs the locally built Caddy image and its caps.
+# Sub2API auditing runs independently; this stack is the official public edge.
+assert 'response_audit' not in caddy
 caddy_service = compose.split('  caddy:\n', 1)[1].split('\n  tusd:', 1)[0]
-assert 'image: sub2api-audit-caddy:2.11.4-response-v1' in caddy_service
+assert 'image: caddy:2.11.4-alpine' in caddy_service
 assert 'mem_limit: 1g' in caddy_service
 assert 'memswap_limit: 1g' in caddy_service
 route = caddy.split('    route {', 1)[1]
 web = caddy.split('{$VIDEO2TEXT_PUBLIC_HOST}', 1)[0]
 demo, other = web.split('        handle @cantones {', 1)
 protected, rest = other.split('        handle @control {', 1)
-assert 'basic_auth' in protected
-assert '{$VIDEO2TEXT_CANTONES_PASSWORD_HASH}' in protected
 assert 'reverse_proxy cantones:4178' in protected
-assert 'basic_auth' not in demo + rest, 'Existing public routes must stay public'
+assert 'basic_auth' not in caddy, 'All web routes, including /cantones, must stay public'
+assert 'VIDEO2TEXT_CANTONES_PASSWORD_HASH' not in compose
 assert route.index('redir / /nas 302') < route.index('handle @control')
 assert '-hooks-http-backoff=2s' in compose
-assert '127.0.0.1:8081:8081' in compose
+assert '127.0.0.1:8081:8081' not in compose
 assert 'env_file:' in compose
 assert 'VIDEO2TEXT_ENABLED_TRANSLATION_PROVIDERS=minimax' in Path('.env.example').read_text()
 for name, end in [('worker', 'cleanup'), ('tusd', 'caddy')]:

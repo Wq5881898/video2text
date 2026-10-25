@@ -31,8 +31,6 @@ required=(
   VIDEO2TEXT_CONFIG_DIR
   VIDEO2TEXT_SHARED_SECRET
   VIDEO2TEXT_PROXY_TOKEN
-  VIDEO2TEXT_CANTONES_USER
-  VIDEO2TEXT_CANTONES_PASSWORD_HASH
 )
 for name in "${required[@]}"; do
   test -n "${!name:-}" || fail "$name is empty"
@@ -44,7 +42,6 @@ done
 [[ "$VIDEO2TEXT_PROXY_TOKEN" != replace-* ]] || fail "replace VIDEO2TEXT_PROXY_TOKEN"
 ((${#VIDEO2TEXT_SHARED_SECRET} >= 32)) || fail "VIDEO2TEXT_SHARED_SECRET must be at least 32 characters"
 ((${#VIDEO2TEXT_PROXY_TOKEN} >= 32)) || fail "VIDEO2TEXT_PROXY_TOKEN must be at least 32 characters"
-[[ "$VIDEO2TEXT_CANTONES_PASSWORD_HASH" == \$2* ]] || fail "set a Caddy bcrypt hash for VIDEO2TEXT_CANTONES_PASSWORD_HASH"
 
 env_mode=$(stat -c '%a' .env)
 [[ "$env_mode" == "600" || "$env_mode" == "400" ]] \

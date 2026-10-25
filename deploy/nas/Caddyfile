@@ -25,9 +25,6 @@
         redir / /nas 302
 
         handle @cantones {
-            basic_auth {
-                {$VIDEO2TEXT_CANTONES_USER} {$VIDEO2TEXT_CANTONES_PASSWORD_HASH}
-            }
             reverse_proxy cantones:4178
         }
 

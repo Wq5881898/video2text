@@ -8,14 +8,13 @@ Docker accepts local uploads only, not media URL input. Standalone does not requ
 
 ## Services
 
-- The Cantonese video-to-English demo is a separate Node/FFmpeg service under `/cantones`, with its own prefix-wide Basic Auth. Existing Docker V3 pages and APIs keep their current public-access policy. Fetch the GitHub delivery branch and follow [the incremental deployment instructions](CANTONES_DEPLOYMENT.md); no ZIP transfer is required.
-- Caddy publishes 80/443 for the DNS-only `stt` and `upload` hostnames, serves the static web app, and exposes the existing Sub2API allowlist only on `127.0.0.1:8081`. Existing Cloudflare Tunnel routing remains unchanged. Worker and tusd publish no host ports.
-- The Caddy service runs the locally built `sub2api-audit-caddy:2.11.4-response-v1` image (official Caddy `2.11.4` plus the local `response_audit` module, source kept in `/opt/sub2api-input-audit/caddy-response-source`). On the loopback `8081` listener it spools whitelisted Sub2API responses to `/config/sub2api-input-audit/responses` and writes filtered request metadata to `/config/sub2api-input-audit/input.log` (rotating). Request metadata kept: path, method, status, duration, `audit_id`, `source_ip`. **Full request-body logging is temporarily disabled** — `{http.request.body}` buffers whole LLM payloads in RAM and OOM-killed this container on 2026-10-22; it must never be re-enabled on upload, media or tus paths. The service keeps a 1 GiB memory cap and 10 MiB × 3 container log rotation. Sub2API streaming is unaffected (`flush_interval -1`).
+- The Cantonese video-to-English demo is a separate Node/FFmpeg service under `/cantones`, with public access and no login prompt, as requested by the user. Existing Docker V3 pages and APIs keep their current public-access policy. Fetch the GitHub delivery branch and follow [the incremental deployment instructions](CANTONES_DEPLOYMENT.md); no ZIP transfer is required.
+- Caddy publishes 80/443 for the DNS-only `stt` and `upload` hostnames, serves the static web app, while the independent Sub2API audit proxy runs separately on 218 at `127.0.0.1:8081`. Existing Cloudflare Tunnel routing remains unchanged. Worker and tusd publish no host ports.
 - tusd receives resumable browser uploads and disables its public download endpoint.
 - The single-worker Flask/Gunicorn service validates upload tickets, queues SQLite jobs, provides signed media reads to Gladia, runs the shared pipeline, and exposes protected status/result APIs.
 - Successful media and work files are removed immediately after the result and SQLite completion state are durable. Failed/partially completed media has seven-day fallback retention; incomplete uploads expire after 24 hours. The capacity high-water threshold is 80%. TXT/SRT results and task records are retained long-term; cleanup must not delete active jobs or durable results.
 
-The Compose file pins tusd `v2.9.2` instead of using floating `latest` tags. Caddy uses the local audit image above rather than the plain `caddy:2.11.4-alpine` upstream tag. Review upstream releases and update these pins deliberately after a staging smoke test.
+The Compose file pins tusd `v2.9.2` instead of using floating `latest` tags. The public edge uses official `caddy:2.11.4-alpine`; the independent audit proxy keeps its own local image and Compose project. Review upstream releases and update these pins deliberately after a staging smoke test.
 
 ## Host preparation
 
@@ -43,7 +42,7 @@ rm /srv/app-data/video2text/uploads/.link-test /srv/app-data/video2text/uploads/
 
 1. Create Cloudflare `A` records for `stt.151077.xyz` and `upload.151077.xyz`, point both to the public IPv4 address, and set both to **DNS only**. Do not add AAAA until IPv6 routing and firewalling are intentionally configured.
 2. Forward public TCP ports 80 and 443, and optionally UDP 443, to this Ubuntu VM. Do not expose NAS administration ports.
-3. Copy `.env.example` to `.env`, generate separate secrets with `openssl rand -hex 32`, generate a Caddy password hash, and restrict `.env` to mode `0600`.
+3. Copy `.env.example` to `.env`, generate separate secrets with `openssl rand -hex 32`, and restrict `.env` to mode `0600`.
 4. Put Gladia and translation credentials in `.env` or mount compatible JSON files under `/srv/video2text-config`.
 5. Keep the Vercel environment unchanged. Docker V3 issues upload tickets and serves job status/results locally.
 
@@ -68,7 +67,7 @@ curl https://upload.151077.xyz/health
 
 The repeated `caddy` is intentional: Compose service name first, container executable second. For the existing image, `docker compose run ... caddy validate` without the executable is not the working command. Use the full invocation above, and do not print expanded Compose configuration or private environment values. Caddy validation does not prove public routing or authentication behavior.
 
-Current temporary policy (user-requested): existing `stt.151077.xyz` routes have no Basic Auth; `/` redirects to `/nas` without login, and the original web/control API is publicly reachable. Only the new `/cantones` prefix uses `VIDEO2TEXT_CANTONES_USER` and `VIDEO2TEXT_CANTONES_PASSWORD_HASH`, including all demo API/media routes. The upload host still exposes only ticket-validated tusd, signed media reads, and minimal health. No user registration, ownership isolation, or cookie-session endpoints are deployed; do not mistake this demo password gate for the future auth design.
+Current policy (user-requested): all `stt.151077.xyz` web routes, including `/cantones` and its demo API/media routes, are public without Basic Auth. `/` redirects to `/nas`. No Cantonese username or password hash is required. Upload tickets, signed media reads, origin checks and provider credentials retain their existing behavior. No user registration or cookie-session endpoints are deployed.
 
 Verification should distinguish loopback 8081 allowlist behavior, local TLS with correct hostname/SNI, and public HTTPS. Check worker/tusd port isolation, tus resume, provider availability, result download, and successful media/work deletion after persistence. Record actual test output by code version rather than copying stale exact test counts. Do not submit paid E2E jobs without authorization.
 

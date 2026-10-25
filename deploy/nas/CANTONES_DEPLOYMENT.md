@@ -24,21 +24,7 @@ do not force-push, hard-reset, or overwrite them. After integrating, normally pu
 `docker-v3` and compare the local SHA against the remote SHA. Record the actual
 final SHA rather than reusing the historical baseline.
 
-The checked-in Compose file already defines `cantones` and Caddy's `/cantones`
-handler. The original Worker/tusd and Sub2API routes are retained. Add only:
-
-```dotenv
-VIDEO2TEXT_CANTONES_USER=video2text
-VIDEO2TEXT_CANTONES_PASSWORD_HASH='REPLACE_PRIVATELY_WITH_CADDY_BCRYPT_HASH'
-```
-
-Use a privately retained existing demo credential if available, or generate and
-store a new one in a root-only credentials file. Do not put passwords, hashes or
-API keys in Git, logs, chat or the acceptance report. Single-quote the bcrypt hash
-in `.env` to preserve its dollar signs. Keep `.env` mode 600. This authentication
-covers only the new `/cantones` prefix. Existing `/`, `/nas` and `/api` remain
-public as in the newer Docker V3 commits; the old blanket-401 acceptance criteria
-do not describe the current deployment.
+The Cantonese demo is already deployed on **218** (the Ubuntu VM and its local Docker). 148 is not involved. The official Caddy serves `/cantones` publicly without Basic Auth, including its API/media routes. No Cantonese username or password hash is required. Keep the existing private `.env` at mode 600; do not print or overwrite unrelated settings. The Sub2API audit proxy is a separate Compose project and is not updated with this demo.
 
 Preserve the existing enabled translation providers (the latest deployment notes
 record `minimax,qwen`). The demo uses its own MiniMax configuration; do not switch
@@ -61,7 +47,7 @@ sudo docker compose config --quiet
 sudo ./verify.sh
 sudo docker compose build cantones
 sudo docker compose up -d --no-deps cantones
-sudo docker compose up -d --no-deps caddy
+sudo docker compose up -d --no-deps --force-recreate caddy
 sudo docker compose ps
 ```
 
@@ -79,11 +65,8 @@ tests using the available host runtime or a disposable matching container.
   as UID 1000. The Docker build and Caddy runtime checks must actually be run on
   the NAS; Windows-only unit tests cannot establish these results.
 - Unauthenticated `/cantones`, `/cantones/`, `/cantones/api/config` and
-  `/cantones/api/jobs` return 401; correct credentials give 200 for the page and
-  configuration endpoint. This GET only inspects local settings/cooldown records;
-  it does not call the provider. The whole prefix must be protected, not just the HTML page.
-  Credentials should use a root-only temporary curl config, not command-line
-  arguments or shell tracing.
+  `/cantones/api/jobs` return 200 without a `WWW-Authenticate` challenge.
+  These GET requests inspect local settings and task records; they do not call a provider.
 - The original `/` still returns 302 to `/nas`; `/nas` is public. Existing
   `/api/health` and `/api/capabilities` behaviour/providers remain unchanged.
   `upload` health stays minimal and returns 200, its `/` and `/api/nas-ticket`
