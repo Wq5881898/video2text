@@ -109,6 +109,9 @@ services:
       DEMO_PORT: 4178
       CANTONES_BIND: 0.0.0.0
       CANTONES_ONLY: 1
+      # Container paths override accidental host/Windows values in env_file.
+      FFMPEG_PATH: /usr/bin/ffmpeg
+      FFPROBE_PATH: /usr/bin/ffprobe
       CANTONES_PUBLIC_ORIGIN: https://${VIDEO2TEXT_WEB_HOST}
     volumes:
       - type: bind

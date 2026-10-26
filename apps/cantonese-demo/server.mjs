@@ -9,6 +9,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { readJson, writeJson, runPipeline, runProcess, recognitionConfig } from './pipeline.mjs';
 import { LANGS, validateRows } from './public/subtitles.mjs';
 import { loadConfig } from './config.mjs';
+import { inspectMediaTools, publicMediaStatus } from './media-tools.mjs';
 import { prepareSource, translateApproved } from './workflow-v2.mjs';
 import { WORKFLOW_VERSION, mergeReview, assertSourceApproved, remainingKnownTerms } from './workflow-checks.mjs';
 import { subtitleBundle } from './subtitle-bundle.mjs';
@@ -29,7 +30,11 @@ const localOrigins = [`http://127.0.0.1:${port}`, `http://localhost:${port}`];
 const allowedOrigins = publicOrigin ? [publicOrigin, ...localOrigins] : localOrigins;
 const allowedHosts = new Set(allowedOrigins.map(origin => new URL(origin).host));
 const running = new Set();
-const toolsReady = await Promise.all([config.ffmpeg, config.ffprobe].map(c => runProcess(c, ['-version'], 10000).then(() => true, () => false)));
+const mediaStatus = await inspectMediaTools(config);
+const toolsReady = Object.values(mediaStatus).map(tool => tool.ready);
+for (const [name, tool] of Object.entries(mediaStatus)) {
+  if (!tool.ready) console.error(`[media-tools] ${name}: ${tool.reason}`);
+}
 
 function send(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
@@ -114,7 +119,7 @@ const server = http.createServer(async (req, res) => {
       if (rest !== '/') url.pathname = rest;
     }
     if (req.method === 'GET' && url.pathname === '/api/config') {
-      send(res, 200, { configured: Boolean(config.asr.apiKey && config.translation.apiKey && toolsReady.every(Boolean)), asr: Boolean(config.asr.apiKey), recognitionModel: config.asr.model, workflowVersion: WORKFLOW_VERSION, gladia: Boolean(config.gladiaKey), translation: Boolean(config.translation.apiKey), mediaTools: toolsReady.every(Boolean), translationModel: config.translation.model, services: await inspectServices(config), maxBytes: MAX_BYTES, maxMinutes: 30 }); return;
+      send(res, 200, { configured: Boolean(config.asr.apiKey && config.translation.apiKey && toolsReady.every(Boolean)), asr: Boolean(config.asr.apiKey), recognitionModel: config.asr.model, workflowVersion: WORKFLOW_VERSION, gladia: Boolean(config.gladiaKey), translation: Boolean(config.translation.apiKey), mediaTools: toolsReady.every(Boolean), mediaStatus: publicMediaStatus(mediaStatus), translationModel: config.translation.model, services: await inspectServices(config), maxBytes: MAX_BYTES, maxMinutes: 30 }); return;
     }
     if (req.method === 'POST' && url.pathname === '/api/preflight') {
       if (running.size) throw new Error('已有任务正在运行，请等待完成');

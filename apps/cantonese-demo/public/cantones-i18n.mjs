@@ -5,6 +5,7 @@ export const COPY = {
     glossary: '專有名稱或固定譯法（選填）', glossaryHint: '例如：公司名稱、指數代碼，以及你希望沿用的英文譯法', optional: '補充術語',
     history: '最近的影片', pickHistory: '開啟先前的工作', flow1: '擷取音軌', flow2: '粵語轉寫', flow3: '詞庫與畫面核對', flow4: '英文翻譯與複核',
     ready: '可以開始', unconfigured: '服務尚未配置', checking: '正在檢查服務…', service: 'MiniMax ASR + M3',
+    mediaUnavailable: '媒體處理工具尚未就緒，請聯絡管理員。',
     privacy: '影片上傳至此服務處理；音軌和必要截圖會傳送至 MiniMax。',
     draftNote: '自動產生的字幕仍需核對。畫面不清楚或口述含糊的地方會保留提示。',
     sourceTitle: '這幾處需要你確認', sourceIntro: '請回聽並核對畫面。只修改有依據的文字；確認後會自動接續英文翻譯。',
@@ -29,6 +30,7 @@ export const COPY = {
     glossary: 'Names or preferred translations (optional)', glossaryHint: 'Company names, index tickers, or English terms you want to keep', optional: 'Add terminology',
     history: 'Recent videos', pickHistory: 'Open an earlier job', flow1: 'Extract audio', flow2: 'Transcribe Cantonese', flow3: 'Check terms and frames', flow4: 'Translate and review English',
     ready: 'Ready to start', unconfigured: 'Service not configured', checking: 'Checking service…', service: 'MiniMax ASR + M3',
+    mediaUnavailable: 'Media processing tools are not ready. Please contact the administrator.',
     privacy: 'Your video is uploaded to this service. Its audio and selected frames are sent to MiniMax.',
     draftNote: 'Automatic subtitles need review. Unclear speech and visual evidence will be flagged.',
     sourceTitle: 'A few source details need your review', sourceIntro: 'Listen and check the frames. Make evidence-based edits, then continue to English translation.',
@@ -50,6 +52,11 @@ export const COPY = {
 };
 
 export function message(locale, key) { return (COPY[locale] || COPY['zh-Hant'])[key] || key; }
+export function serviceStateKey(config) {
+  if (!config) return 'checking';
+  if (config.mediaTools === false) return 'mediaUnavailable';
+  return config.configured ? 'ready' : 'unconfigured';
+}
 export function errorKey(error) {
   const text = String(error?.message || error);
   if (/capacity|cooldown|rate.limit|容量|限流|繁忙|稍后|稍後/iu.test(text) || error?.retryAt) return 'capacity';

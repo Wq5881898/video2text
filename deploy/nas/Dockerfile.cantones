@@ -4,15 +4,21 @@ ENV NODE_ENV=production \
     VIDEO2TEXT_CONFIG_DIR=/config \
     DEMO_PORT=4178 \
     CANTONES_BIND=0.0.0.0 \
-    CANTONES_ONLY=1
+    CANTONES_ONLY=1 \
+    FFMPEG_PATH=/usr/bin/ffmpeg \
+    FFPROBE_PATH=/usr/bin/ffprobe
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
+    && /usr/bin/ffmpeg -version > /dev/null \
+    && /usr/bin/ffprobe -version > /dev/null \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app/apps/cantonese-demo
 COPY --chown=node:node . ./
 RUN mkdir -p .data && chown node:node .data
 USER node
+# Fail the build if the runtime user cannot extract audio and frames. No API calls.
+RUN node check-runtime.mjs --media-only --smoke
 EXPOSE 4178
 CMD ["node", "server.mjs"]

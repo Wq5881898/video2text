@@ -1,7 +1,7 @@
-import { message, errorKey } from './cantones-i18n.mjs';
+import { message, errorKey, serviceStateKey } from './cantones-i18n.mjs';
 
 const $ = id => document.getElementById(id), API = '/cantones/api';
-const state = { locale: 'zh-Hant', file: null, job: null, project: null, packet: null, busy: false, dirty: false, all: false, ready: false, timer: null, epoch: 0, stage: '', retryAt: null, notice: null, localMedia: null };
+const state = { locale: 'zh-Hant', file: null, job: null, project: null, packet: null, busy: false, dirty: false, all: false, ready: false, config: null, timer: null, epoch: 0, stage: '', retryAt: null, notice: null, localMedia: null };
 try { if (localStorage.getItem('cantones-locale') === 'en') state.locale = 'en'; } catch {}
 const t = key => message(state.locale, key);
 const escape = s => String(s ?? '').replace(/[&<>"']/gu, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -45,7 +45,7 @@ function localize() {
   for (const element of document.querySelectorAll('[data-label]')) element.setAttribute('aria-label', t(element.dataset.label));
   $('traditional').setAttribute('aria-pressed', String(state.locale === 'zh-Hant'));
   $('english-ui').setAttribute('aria-pressed', String(state.locale === 'en'));
-  $('service-state').textContent = t(state.ready ? 'ready' : 'unconfigured');
+  $('service-state').textContent = t(serviceStateKey(state.config));
   if (state.file) { $('file-name').removeAttribute('data-i18n'); $('file-name').textContent = state.file.name; }
   if (state.notice) notice(state.notice.key, state.notice.error);
   if (state.stage) $('stage').textContent = t(state.stage);
@@ -266,8 +266,8 @@ setInterval(controls, 1000);
 
 localize(); $('service-state').textContent = t('checking');
 try {
-  const config = await api('/config'); state.ready = config.configured;
-  $('service-state').textContent = t(state.ready ? 'ready' : 'unconfigured'); controls();
+  const config = await api('/config'); state.config = config; state.ready = config.configured;
+  $('service-state').textContent = t(serviceStateKey(config)); controls();
   await refreshHistory();
   const id = new URLSearchParams(location.search).get('job');
   if (id && /^[a-f0-9-]{36}$/u.test(id)) await openJob(id);

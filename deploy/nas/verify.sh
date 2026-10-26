@@ -57,6 +57,8 @@ for name, end in [('worker', 'cleanup'), ('tusd', 'caddy')]:
 cantones = compose.split('  cantones:\n', 1)[1].split('\n  cleanup:', 1)[0]
 assert '\n    ports:' not in cantones
 assert 'CANTONES_ONLY: 1' in cantones
+assert 'FFMPEG_PATH: /usr/bin/ffmpeg' in cantones
+assert 'FFPROBE_PATH: /usr/bin/ffprobe' in cantones
 assert 'CANTONES_PUBLIC_ORIGIN: https://${VIDEO2TEXT_WEB_HOST}' in cantones
 assert '${VIDEO2TEXT_DATA_DIR:?Set VIDEO2TEXT_DATA_DIR in .env}/cantones' in cantones
 print('Non-billable configuration assertions passed')
