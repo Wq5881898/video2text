@@ -34,6 +34,7 @@ const report = {
   sourceFingerprint: fingerprint.digest('hex'), sourceFiles: sources.length,
   asrConfigured: Boolean(config.asr.apiKey), translationConfigured: Boolean(config.translation.apiKey),
   recognitionModel: config.asr.model, translationModel: config.translation.model,
+  asrTimeoutMs: config.asr.timeoutMs,
   tools: await inspectMediaTools(config), smoke: { status: 'not-run' },
 };
 report.ok = Object.values(report.tools).every(tool => tool.ready) && (args.has('--media-only') || (report.asrConfigured && report.translationConfigured));

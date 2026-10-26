@@ -3,7 +3,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from './config.mjs';
 import { readJson, writeJson, runProcess } from './pipeline.mjs';
-import { modelTool, recordedRequest, digest, digestFile } from './model-client.mjs';
+import { modelTool, digest, digestFile } from './model-client.mjs';
+import { recordedAsrRequest } from './asr-request.mjs';
 import { generalLexicon, reviewTriggers, sourceAudioRisks } from './workflow-checks.mjs';
 import { normalizeMiniMaxUnits, captionMiniMaxUnits } from './minimax-asr.mjs';
 import { chunkPlan, AUDIT_PROMPT, AUDIT_TOOL, validateAudit } from './workflow-v2.mjs';
@@ -85,7 +86,7 @@ async function transcribe() {
     if (bytes.length > 50 * 1024 * 1024 || c.duration > 500) throw Error('ASR file limit');
     form.append('file', new Blob([bytes], { type: 'audio/flac' }), `chunk-${c.index}.flac`);
     form.append('model', config.asr.model); form.append('response_format', 'verbose_json'); form.append('timestamp_level', 'word');
-    const raw = await recordedRequest(dir, `full-asr-${c.index}`, { url: config.asr.endpoint, apiKey: config.asr.apiKey, headers: { language: 'yue' }, body: form, timeout: 480000, retryUnknown, identity: { model: config.asr.model, language: 'yue', response_format: 'verbose_json', timestamp_level: 'word', audioSha256: digest(bytes), ...c } });
+    const raw = await recordedAsrRequest(dir, `full-asr-${c.index}`, config.asr, { body: form, retryUnknown, identity: { model: config.asr.model, language: 'yue', response_format: 'verbose_json', timestamp_level: 'word', audioSha256: digest(bytes), ...c } });
     output[c.index] = normalizeMiniMaxUnits(raw, c.offset, c.duration, c.index);
     log({ chunk: c.index + 1, total: media.chunks.length, units: output[c.index].length });
   });
@@ -206,7 +207,7 @@ async function recheck() {
     const bytes = await fs.readFile(file);
     for (const language of ['yue', 'auto']) {
       const form = new FormData(); form.append('file', new Blob([bytes], { type: 'audio/flac' }), `${c.id}.flac`); form.append('model', config.asr.model); form.append('response_format', 'verbose_json'); form.append('timestamp_level', 'word');
-      const raw = await recordedRequest(dir, `recheck-${c.id}-${language}`, { url: config.asr.endpoint, apiKey: config.asr.apiKey, headers: language === 'auto' ? {} : { language }, body: form, identity: { audioSha256: digest(bytes), model: config.asr.model, language, start: c.start, end: c.end } });
+      const raw = await recordedAsrRequest(dir, `recheck-${c.id}-${language}`, config.asr, { language, body: form, identity: { audioSha256: digest(bytes), model: config.asr.model, language, start: c.start, end: c.end } });
       if (!raw.text?.trim()) throw Error('Empty audio recheck');
       results.push({ ...c, language, text: raw.text, sourceText: original.find(r => r.id === c.id).yue, file, audioSha256: digest(bytes), engine: config.asr.model, humanListening: false });
       log({ id: c.id, language, completed: results.length, total: chosen.length * 2 });

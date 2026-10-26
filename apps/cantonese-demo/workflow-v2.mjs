@@ -3,7 +3,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readJson, writeJson, runProcess } from './pipeline.mjs';
 import { normalizeMiniMaxUnits, captionMiniMaxUnits } from './minimax-asr.mjs';
-import { modelTool, recordedRequest, digest, digestFile } from './model-client.mjs';
+import { modelTool, digest, digestFile } from './model-client.mjs';
+import { recordedAsrRequest } from './asr-request.mjs';
 import { WORKFLOW_VERSION, generalLexicon, reviewTriggers, paragraphBatches, sourceHash, assertSourceApproved, remainingKnownTerms } from './workflow-checks.mjs';
 import { applyConfirmedTerminology, verifyProtectedTerms } from './terminology-review.mjs';
 import { VISUAL_REVIEW_PROMPT, REVIEW_TOOL, canonicalizeVisualPatches, validateVisualReview, applyLocalChanges } from './visual-review.mjs';
@@ -85,7 +86,7 @@ const context = (rows, target) => {
   return { before: rows.slice(Math.max(0, first - 3), first).map(thin), after: rows.slice(last, last + 3).map(thin) };
 };
 
-export async function prepareSource(dir, config, update, { retryUnknown = false, independentVisualInventory = false } = {}) {
+export async function prepareSource(dir, config, update, { retryUnknown = false, independentVisualInventory = false, asrFetchImpl } = {}) {
   const job = await readJson(path.join(dir, 'job.json'));
   if (job.sourceHash && await digestFile(path.join(dir, job.sourceFile)) !== job.sourceHash) throw new Error('源媒体指纹已变化，不能将新视频画面与旧识别结果混用，请新建任务');
   const cpFile = path.join(dir, 'workflow-checkpoint.json');
@@ -122,7 +123,7 @@ export async function prepareSource(dir, config, update, { retryUnknown = false,
       const bytes = await fs.readFile(file);
       if (bytes.length > 50 * 1024 * 1024 || chunk.duration > 500) throw new Error('音频分块超出ASR限制');
       const form = new FormData(); form.append('file', new Blob([bytes], { type: 'audio/flac' }), `chunk-${chunk.index}.flac`); form.append('model', config.asr.model); form.append('response_format', 'verbose_json'); form.append('timestamp_level', 'word');
-      const raw = await recordedRequest(dir, `asr-${chunk.index}`, { url: config.asr.endpoint, apiKey: config.asr.apiKey, headers: { language: 'yue' }, body: form, identity: { model: config.asr.model, language: 'yue', response_format: 'verbose_json', timestamp_level: 'word', offset: chunk.offset, duration: chunk.duration, audioSha256: digest(bytes) }, retryUnknown });
+      const raw = await recordedAsrRequest(dir, `asr-${chunk.index}`, config.asr, { body: form, identity: { model: config.asr.model, language: 'yue', response_format: 'verbose_json', timestamp_level: 'word', offset: chunk.offset, duration: chunk.duration, audioSha256: digest(bytes) }, retryUnknown, fetchImpl: asrFetchImpl });
       units.push(...normalizeMiniMaxUnits(raw, chunk.offset, chunk.duration, chunk.index));
     }
     const rows = captionMiniMaxUnits(units, { maxSeconds: 4.8, maxCharacters: 30 });

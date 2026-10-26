@@ -45,18 +45,30 @@ export async function recordedRequest(dir, key, { url, apiKey, body, headers = {
       if (!state.checkedAt && priorFailure && Date.parse(lastFailure.at) + priorFailure.delayMs > (runtime.now?.() ?? Date.now())) {
         throw await recordProviderFailure(serviceId, lastFailure.status, lastFailure.payload, runtime);
       }
-      if (intent) await writeJson(`${file}-unknown-${Date.now()}.json`, intent);
-      await writeJson(`${file}-intent.json`, { at: new Date().toISOString(), url, fingerprint, attempt, model: identity?.model ?? body?.model ?? null, explicitUnknownRetry: Boolean(intent) });
+      if (intent) {
+        const stamp = Date.now();
+        await writeJson(`${file}-unknown-${stamp}.json`, intent);
+        const interrupted = await readJson(`${file}-interrupted.json`);
+        if (interrupted) await writeJson(`${file}-unknown-${stamp}-interrupted.json`, interrupted);
+      }
+      await writeJson(`${file}-intent.json`, { at: new Date().toISOString(), url, fingerprint, attempt, model: identity?.model ?? body?.model ?? null, timeoutMs: timeout, explicitUnknownRetry: Boolean(intent) });
       // Never persist authorization, key or multipart audio bytes.
       if (!(body instanceof FormData)) await writeJson(`${file}-input.json`, body);
-      let raw;
+      let raw, httpStatus = null, phase = 'awaiting-response-headers';
+      const started = Date.now(), signal = AbortSignal.timeout(timeout);
       try {
-        const r = await fetchImpl(url, { method: 'POST', redirect: 'error', headers: { Authorization: `Bearer ${apiKey}`, ...headers }, body: body instanceof FormData ? body : JSON.stringify(body), signal: AbortSignal.timeout(timeout) });
+        const r = await fetchImpl(url, { method: 'POST', redirect: 'error', headers: { Authorization: `Bearer ${apiKey}`, ...headers }, body: body instanceof FormData ? body : JSON.stringify(body), signal });
+        httpStatus = r.status; phase = 'reading-response-body';
         raw = (await r.text()).replaceAll(apiKey, '[REDACTED]');
         let payload; try { payload = JSON.parse(raw); } catch { payload = { nonJsonResponse: raw.slice(0, 2000) }; }
         response = { status: r.status, at: new Date().toISOString(), payload, retryAfter: r.headers.get('retry-after') };
-        await writeJson(`${file}-response.json`, response);
-      } catch (error) { throw new Error(`模型请求结果未知，已保留提交记录；未自动重发。${error.name}`); }
+        phase = 'saving-response'; await writeJson(`${file}-response.json`, response);
+      } catch (error) {
+        const timeoutError = error.name === 'TimeoutError' || signal.aborted && signal.reason?.name === 'TimeoutError';
+        const code = String(error.code ?? error.cause?.code ?? '');
+        await writeJson(`${file}-interrupted.json`, { at: new Date().toISOString(), outcome: 'unknown', kind: timeoutError ? 'timeout' : 'interrupted', phase, httpStatus, timeoutMs: timeout, elapsedMs: Date.now() - started, transportCode: /^[A-Z0-9_]{1,80}$/u.test(code) ? code : null });
+        throw new Error(`模型请求结果未知，已保留提交记录；未自动重发。${timeoutError ? 'TimeoutError' : error.name}`);
+      }
     }
     const failure = await recordProviderFailure(serviceId, response.status, response.payload, { ...runtime, retryAfter: response.retryAfter });
     if (failure) throw failure;

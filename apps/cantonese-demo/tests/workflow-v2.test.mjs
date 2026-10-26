@@ -166,7 +166,7 @@ test('real extraction and frames plus simulated MiniMax pass source approval, bo
     };
     const config = { ffmpeg: 'ffmpeg', ffprobe: 'ffprobe', asr: { apiKey: 'fake', model: 'asr-1.0', endpoint: 'https://unit.invalid/speech_to_text' }, translation: { apiKey: 'fake', model: 'MiniMax-M3', baseUrl: 'https://unit.invalid/v1' } };
     const statuses = [], update = async stage => statuses.push(stage);
-    const source = await prepareSource(dir, config, update);
+    const source = await prepareSource(dir, config, update, { asrFetchImpl: globalThis.fetch });
     assert.equal(source.rows[0].yue, '唔係。'); assert.equal(source.rows[0].en, ''); assert.equal(statuses.at(-1), 'source-review'); assert.equal(calls.length, 2);
     await assert.rejects(translateApproved(dir, config, update), /逐段核对/);
     const review = { ...source, rows: source.rows.map(r => ({ ...r, sourceReviewed: true })) }; await writeJson(path.join(dir, 'review.json'), review);

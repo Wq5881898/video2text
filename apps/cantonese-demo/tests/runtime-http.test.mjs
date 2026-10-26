@@ -52,7 +52,7 @@ test('HTTP upload reaches English SRT with real media tools, only a loopback mod
   const baseEnv = { ...process.env, CANTONES_BIND: '127.0.0.1', CANTONES_ONLY: '1', VIDEO2TEXT_CONFIG_DIR: configDir,
     MINIMAX_ASR_API_KEY: 'synthetic-asr-key', TRANSLATION_API_KEY: 'synthetic-text-key',
     MINIMAX_ASR_ENDPOINT: mockOrigin + '/speech_to_text', TRANSLATION_BASE_URL: mockOrigin + '/v1',
-    MINIMAX_ASR_MODEL: 'asr-1.0', TRANSLATION_MODEL: 'MiniMax-M3' };
+    MINIMAX_ASR_MODEL: 'asr-1.0', MINIMAX_ASR_TIMEOUT_MS: '480000', TRANSLATION_MODEL: 'MiniMax-M3' };
   async function start(extra = {}) {
     const port = await freePort(), origin = `http://127.0.0.1:${port}`;
     const proc = spawn(process.execPath, ['server.mjs'], { cwd: root, windowsHide: true, env: { ...baseEnv, DEMO_PORT: String(port), CANTONES_PUBLIC_ORIGIN: origin, CANTONES_DATA_DIR: path.join(folder, 'jobs-' + port), ...extra }, stdio: ['ignore', 'ignore', 'pipe'] });
@@ -88,6 +88,8 @@ test('HTTP upload reaches English SRT with real media tools, only a loopback mod
     const download = await fetch(app.origin + '/cantones/api/jobs/' + id + '/export');
     assert.equal(download.status, 200); const srt = await download.text();
     assert.match(srt, /The market rose today\./); assert.match(srt, /00:00:00,100 --> 00:00:01,500/);
+    const asrIntent = JSON.parse(await fs.readFile(path.join(app.data, id, 'requests/asr-0-0-intent.json'), 'utf8'));
+    assert.equal(asrIntent.timeoutMs, 480000);
     const before = calls.length;
     const finished = await fetch(app.origin + '/cantones/api/jobs/' + id + '/resume', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
     assert.equal(finished.status, 400); assert.equal(calls.length, before);

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { resolveAsrTimeout } from './asr-request.mjs';
 
 export function loadConfig(root, env = process.env) {
   const configRoot = env.VIDEO2TEXT_CONFIG_DIR || path.resolve(root, '../../config');
@@ -14,6 +15,7 @@ export function loadConfig(root, env = process.env) {
       apiKey: env.MINIMAX_ASR_API_KEY || env.MINIMAX_API_KEY || minimax.api_key || '',
       endpoint: env.MINIMAX_ASR_ENDPOINT || 'https://api.minimax.cn/v1/speech_to_text',
       model: env.MINIMAX_ASR_MODEL || 'asr-1.0',
+      timeoutMs: resolveAsrTimeout(env.MINIMAX_ASR_TIMEOUT_MS),
     },
     gladiaKey: env.GLADIA_API_KEY || keys[Number(env.GLADIA_KEY_INDEX || 0)] || '',
     translation: {
