@@ -131,7 +131,7 @@ export async function runCantones(dir, config, update, options = {}) {
   // Freeze the text rules before user review; resume never silently adopts a
   // later dictionary. The existing source checkpoint also pins endpoint/key/model.
   const snapshotFile = path.join(dir, 'cantones-rules-snapshot.json');
-  const settings = await readJson(snapshotFile, { model: config.translation.model, endpoint: config.translation.baseUrl, keyHash: digest(config.translation.apiKey), rules: await readJson(path.join(ROOT, 'translation-context-rules.json')), policy: await readJson(path.join(ROOT, 'semantic-preservation-policy.json')) });
+  const settings = await readJson(snapshotFile, { model: config.translation.model, endpoint: config.translation.baseUrl, keyHash: digest(config.translation.apiKey), rules: await readJson(path.join(ROOT, 'translation-context-rules.json')), policy: await readJson(path.join(ROOT, 'semantic-preservation-policy.json')), auditReceivesRules: true });
   if (settings.model !== config.translation.model || settings.endpoint !== config.translation.baseUrl || settings.keyHash !== digest(config.translation.apiKey)) throw Error('Resume requires the original translation configuration');
   await writeJson(snapshotFile, settings);
   if (!project.sourceDecision) {
@@ -168,7 +168,8 @@ export async function runCantones(dir, config, update, options = {}) {
     const corrected = applyEnglishReview(draft, review);
     const audit = await modelTool(dir, `cantones-english-audit-${key}`, config.translation, {
       prompt: AUDIT_PROMPT + '\nThis task is English-only. Ignore empty zh. Audit the corrected output, do not rewrite it.',
-      input: { targetRows: corrected.map(({ id, yue, en }) => ({ id, yue, en, zh: '' })), context: input.completeSource, referenceIncluded: false }, tool: AUDIT_TOOL, ...options,
+      input: { targetRows: corrected.map(({ id, yue, en }) => ({ id, yue, en, zh: '' })), context: input.completeSource,
+        ...(settings.auditReceivesRules ? { generalTranslationRules: settings.rules, semanticPreservationPolicy: settings.policy } : {}), referenceIncluded: false }, tool: AUDIT_TOOL, ...options,
       validate: p => { const checked = validateAudit(p, corrected, { quarantineUnverified: true }); if (checked.issues.some(i => i.lang === 'zh')) throw Error('English-only audit cannot evaluate zh'); return checked; },
     });
     const deterministic = criticalTranslationIssues(corrected);

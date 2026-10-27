@@ -1,5 +1,5 @@
 {
-  "version": "2026-10-20.general.2",
+  "version": "2026-10-27.general.3",
   "scope": "Reusable source-grounded translation checks, no video-specific answers or quantities.",
   "rules": [
     {
@@ -85,6 +85,42 @@
     {
       "id": "protect-good-lines",
       "guidance": "A second translation pass can regress correct information. Review a local proposed edit against the source; do not assume a wholesale rewrite is better. Same-model clean audit is not independent acceptance."
+    },
+    {
+      "id": "bollinger-middle-band",
+      "guidance": "When Bollinger Bands are identified, normalize the spoken medium line/median line to middle band or middle line in English. Never change medium term in unrelated text. Preserve daily/weekly and the correct indicator object."
+    },
+    {
+      "id": "bollinger-position",
+      "guidance": "Distinguish the lower portion of the Bollinger Bands, the lower band/support, a close below the band, and an intraday wick below it. 下方/下面 does not alone establish a completed break outside the entire band. If source wording is ambiguous, flag it rather than assert a breakout."
+    },
+    {
+      "id": "sector-lead-versus-upcoming",
+      "guidance": "In sector-relative-performance commentary, an approved lead緊 means leading the market. An unresolved 呢緊/嚟緊 source sound must be reviewed, not translated as tight-market ones or guessed to mean leading. Genuine upcoming-market language remains future-oriented."
+    },
+    {
+      "id": "retest-conditionality",
+      "guidance": "突破之後落返嚟再探一次都正常 may describe a hypothetical/normal retest: a pullback to retest would be normal. Do not turn it into came back down and tested unless the source establishes the retest actually happened."
+    },
+    {
+      "id": "no-unspoken-direct-path",
+      "guidance": "即係 is an explanation/connector, not straight/directly. Going to a target must not gain an unspoken direct-path claim. Preserve possible/could and do not imply the target is guaranteed."
+    },
+    {
+      "id": "source-chart-scale-conflict",
+      "guidance": "A source amount can conflict with its same-object chart even when a reference agrees. Raise source uncertainty; do not silently change units, divide by ten, or override the approved source with plotted values. No remembered per-video answer is a general numeric rule."
+    },
+    {
+      "id": "atomic-numbers-and-units",
+      "guidance": "Read numeric continuations across cue boundaries as one amount, including Chinese tens plus units and minus/decimal English words. Do not translate the fragments into unrelated numbers. Flag display splits of a number or technical name for timing review; never invent timestamps or omit fragments."
+    },
+    {
+      "id": "whole-sentence-cleanup",
+      "guidance": "Before returning adjacent cues, read their joined English. Avoid duplicate within one day/in one day for one source duration, leading orphan punctuation, and literal geopolitical relationship where the source means because of geopolitical circumstances/tensions. Do not remove real repeated speaker claims."
+    },
+    {
+      "id": "justification-versus-authority",
+      "guidance": "In an inflation-based rationale for a rate decision, 有權 may mean having grounds/justification; do not automatically introduce institutional authority. Preserve literal authority when that is actually the subject."
     }
   ]
 }

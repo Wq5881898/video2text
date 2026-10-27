@@ -1,5 +1,5 @@
 {
-  "version": "2026-10-21.3",
+  "version": "2026-10-27.1",
   "purpose": "文字模型审定阶段的常见误识别学习词库；逐次匹配，禁止无语境全局替换。",
   "precisionPolicy": {
     "allowEvidenceBackedPrecision": true,
@@ -688,6 +688,94 @@
       "status": "unconfirmed",
       "severity": "critical",
       "source": "本轮学习的回听触发词；不自动替换，不把单次识别或英文基线当音频真值"
+    },
+    {
+      "id": "nyse-breadth-spelling",
+      "canonical": "breadth",
+      "pattern": "(?<![A-Za-z])bread(?![A-Za-z])",
+      "context": "NYSE|紐約交易所|纽约交易所|市場寬度|市场宽度",
+      "contextScope": "row",
+      "mode": "context",
+      "status": "confirmed",
+      "severity": "critical",
+      "category": "term",
+      "examples": [
+        "紐約交易所嘅bread"
+      ],
+      "source": "9月10日复核：NYSE市场宽度语境的固定术语，不改食物bread或其他对象。"
+    },
+    {
+      "id": "cantonese-we-look",
+      "canonical": "我哋",
+      "pattern": "我的(?=睇[返翻])",
+      "context": "板[塊块]|市[場场]|指[數数]|股票|圖|图",
+      "contextScope": "row",
+      "mode": "context",
+      "status": "confirmed",
+      "severity": "critical",
+      "category": "other",
+      "examples": [
+        "所以我的睇翻所有嘅板块"
+      ],
+      "source": "明确粤语句式误写；不改“我的图”等合法所有格。"
+    },
+    {
+      "id": "new-high-text-artifact",
+      "canonical": "新",
+      "pattern": "[:：]?\\s*(?<![A-Za-z])new(?=高)",
+      "context": "指[數数]|創|创|高位|confirmation",
+      "mode": "context",
+      "status": "confirmed",
+      "severity": "critical",
+      "category": "term",
+      "examples": [
+        "創咗一個:new高",
+        "指數亦都創造一個:new高"
+      ],
+      "source": "财经新高表达与邻近确认语境的正文清理；不删除两次新高事实。"
+    },
+    {
+      "id": "oil-reversal-question",
+      "canonical": "會唔會",
+      "pattern": "會唔(?=喺.{0,18}逆[轉转])",
+      "context": "油[價价]|逆[轉转]",
+      "contextScope": "row",
+      "mode": "context",
+      "status": "confirmed",
+      "severity": "critical",
+      "category": "other",
+      "examples": [
+        "油價會唔喺呢啲地方就開始逆轉呢"
+      ],
+      "source": "逆转问句缺字；不泛化“會唔喺屋企”等其他句式。"
+    },
+    {
+      "id": "sector-leading-sound-review",
+      "canonical": "lead 緊",
+      "pattern": "(?:呢|[嚟黎來来])緊(?=嘅市[場场])",
+      "context": "health\\s*care|healthcare|financial|地[產产]|板[塊块]|sector",
+      "mode": "review",
+      "status": "unconfirmed",
+      "severity": "critical",
+      "category": "ambiguous_sound",
+      "examples": [
+        "healthcare同financial原本呢啲係呢緊嘅市場"
+      ],
+      "source": "可能是lead緊（领涨），也可能是未来时间；必须依本片原音及上下文确认，单次复识不升级为自动替换。"
+    },
+    {
+      "id": "index-quantity-scale-review",
+      "canonical": "",
+      "pattern": "[零〇一二兩两三四五六七八九十百千萬万]+\\s*(?:至|到|[-–])\\s*[零〇一二兩两三四五六七八九十百千萬万]+",
+      "context": "指[數数]|支持|高位|price|Nasdaq|S&P|SPX|道指",
+      "mode": "review",
+      "status": "unconfirmed",
+      "severity": "critical",
+      "category": "number",
+      "examples": [
+        "七萬三千五至七萬五"
+      ],
+      "source": "图表数字量级复核触发器，不内置目标点位，不自动缩放。参考与转写相同也可能共同出错。"
     }
   ],
   "documentCorrections": [
@@ -744,5 +832,27 @@
     "breadth thrust",
     "SKEW index",
     "UGA"
+  ],
+  "reviewGuidance": [
+    {
+      "id": "chart-quantity-scale",
+      "guidance": "核对数字时必须同时核对同对象、同一时间及图表纵轴/单位/缩放。转写与参考相同不代表正确。量级冲突标requires-review，保留原值与画面证据，不自动乘除十或把口述观点改成行情事实。"
+    },
+    {
+      "id": "ambiguous-sector-leading",
+      "guidance": "板块相对强弱语境中的呢緊/嚟緊可能是lead緊；先回听，不能翻成tight market，也不能把真正的未来表达改成领涨。"
+    },
+    {
+      "id": "cantonese-and-english-parity",
+      "guidance": "英文修正不代表粤语源稿同步修正；独立检查bread/breadth、我哋、會唔會、新高等。保留原始ASR、每个源ID与时间，不无记录覆盖源稿。"
+    },
+    {
+      "id": "atomic-quantities",
+      "guidance": "跨条阅读完整数字、负号、小数、期限、术语及单位，例如三十／八、minus sixty one／point eight eight。不是两组数字；发现不良断句标示复核，不挪动源内容或编造时间。"
+    },
+    {
+      "id": "minimal-correction",
+      "guidance": "只做有语境依据的局部修改；不统一繁简、不扩写品牌、不增加数字精度；new高的两个出现分别可能指指标与指数，不能当重复删除。"
+    }
   ]
 }

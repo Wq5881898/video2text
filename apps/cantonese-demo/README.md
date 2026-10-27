@@ -78,10 +78,12 @@ Use the existing `deploy/nas/compose.yaml`; it includes the `cantones` service a
 `Dockerfile.cantones`. No ZIP or extra Compose overlay is required. See
 [`deploy/nas/CANTONES_DEPLOYMENT.md`](../../deploy/nas/CANTONES_DEPLOYMENT.md).
 
-The service publishes no host port. Caddy protects the entire `/cantones` prefix,
-including API/media/download routes, using its separate Basic Auth credentials.
-The existing Docker V3 routes retain their current public-access policy. This
-is a single shared demo workspace, not an account system with per-user isolation.
+The service publishes no host port. The official Caddy gateway on **218** routes
+the entire `/cantones` prefix, including API/media/download routes. Access is
+public without Basic Auth, as requested by the user; the original Docker V3
+routes retain their policy. This is a single shared demo workspace, not an
+account system with per-user isolation. **148** is a different Docker host and
+is not part of a Cantonese-service update.
 
 Private API configuration is mounted read-only at `/config`. All uploads, jobs,
 frames and results live under the host data directory's `cantones` child, mounted
@@ -95,3 +97,58 @@ resumable uploader. Unknown provider outcomes require explicit retry and can
 have duplicate billing; successful recorded steps are reused. Source IDs,
 timings, rule snapshots, image evidence, source/English revisions and model
 responses are retained. Editing English marks the prior model review stale.
+
+## Assisted-production learning workflow (2026-10-27)
+
+This is an assisted production workflow, not a trained ASR model or a claim of
+unattended reference-level translation. The production route remains
+`https://stt.151077.xyz/cantones` on **218**.
+
+1. Upload the original video. Keep the lossless audio master and source identity;
+   submit the bounded MP3 chunks through the existing MiniMax ASR adapter.
+2. `financial-error-lexicon.json` **2026-10-27.1** supplies 43 source rules plus
+   five reusable review instructions. Confirmed, context-matched spelling errors
+   such as NYSE `bread` → `breadth` and `我的睇翻` → `我哋睇翻` can be corrected.
+   Sector `呢緊` → possible `lead 緊` and quantity-scale conflicts require review;
+   they are not automatic substitutions. Existing S&P/Nas100/bar and visual or
+   audio evidence requirements remain in force.
+3. Compare terms and quantities with the same-time, same-object frames. Check
+   chart-axis units and scale, not just whether OCR or a reference agrees.
+   Never automatically divide an index range by ten or replace the speaker's
+   claim with an unrelated plotted value. Keep conflicting original text,
+   images and a review note. Short ASR re-recognition is fallible evidence,
+   not human listening or an independent engine.
+4. Resolve source questions before freezing the Cantonese for translation.
+   When Codex assists the review, record `reviewActor: "assistant"` and the
+   supporting notes; do not mark it as whole-film human approval.
+5. `translation-context-rules.json` **2026-10-27.general.3** supplies 30 general
+   rules to English drafting, local correction **and final model audit**. New
+   checks cover the Bollinger middle/lower band, retest conditionality,
+   unsupported direct-path wording, quantities across cue boundaries and
+   joined-sentence cleanup. Deterministic warnings still flag these risks when
+   a model returns an empty audit; they do not silently rewrite the English.
+6. Inspect number/name/unit boundaries, more-than-two-line captions and short
+   or fast cues. These remain assisted layout checks; source timing is never
+   invented to hide warnings. Save English revisions, recheck affected meaning,
+   reload the page and download/read back the SRT. YouTube playback must be
+   verified separately before claiming that acceptance.
+
+New jobs snapshot the source lexicon in `lexicon-snapshot.json` and English rules
+in `cantones-rules-snapshot.json`; resumes retain those snapshots. Updating the
+deployment does not rewrite existing jobs, reprocess paid requests or upgrade
+their dictionaries implicitly. Use a new job for a new-version quality test.
+The original ASR and previous revisions remain available for audit.
+
+For the next held-out video, generate and freeze the candidate from video plus
+general rules first; only then read the matching reference subtitles. Compare
+Cantonese and English separately. Check missing/duplicate information, names,
+quantities, negation, conditions and chart positions. Reference agreement,
+substring distance, subtitle counts and a clean same-model audit are not accuracy
+scores; the reference can itself be wrong. Record the actual assistance used.
+
+Deploy by pushing the tested Git delivery commit, then updating only the
+`cantones` service in `/opt/video2text/deploy/nas` on **218**. Do not use the
+historical first-install/Caddy migration commands for a dictionary update.
+Verify the running container's rule versions and normalized runtime fingerprint
+against the delivery commit; preserve all task data. No **148**, shared Caddy,
+worker, tusd, Sub2API, audit proxy, DNS or Tunnel change is required.

@@ -28,6 +28,29 @@ export function criticalTranslationIssues(rows) {
     const localSource = rows.slice(Math.max(0,index-2),index+3).map(r=>r.yue).join(' ');
     const localEnglish = rows.slice(Math.max(0,index-2),index+3).map(r=>r.en).join(' ');
     const compactSource = localSource.replace(/[\s，,。；;]+/gu, '');
+    const bollinger = /bollinger|布林/iu.test(localSource);
+    if (bollinger && /\bmedium\s+line\b/iu.test(localEnglish) && /\bmedium\b/iu.test(row.en)) {
+      add(row,'en','bollinger-middle-band','布林带中线应为 middle band/middle line；此提示不适用于 medium term 等其他表达。');
+    }
+    if (bollinger && /\b(?:below|beneath)\b/iu.test(row.en)
+      && /\b(?:below|beneath)\s+(?:(?:the|its|his)\s+)?Bollinger\s+Bands?\b/iu.test(localEnglish)
+      && /(?:Band|布林帶|布林带).{0,12}(?:下方|下邊|下边|下面)/iu.test(localSource)) {
+      add(row,'en','bollinger-lower-position','源文“下方/下边”可能指带内下部或下轨支撑，英文 below 整条带可能改变技术位置；结合同期画面确认，不自动替换。');
+    }
+    if (/落[返翻].{0,14}再(?:探|test)/iu.test(row.yue) && /正常/u.test(localSource)
+      && /\bcame\s+back\s+down\b.{0,35}\btested\b/iu.test(row.en)) {
+      add(row,'en','retest-actuality','源文可能在说回落再测试也正常；过去式可能新增“已经回测”。核实条件/实际发生的关系，不凭参考或语法偏好直接重写。');
+    }
+    if (/即[係系].{0,12}去到|有機會.{0,12}去到|有机会.{0,12}去到/u.test(row.yue)
+      && /\b(?:straight|directly)\s+to\b/iu.test(row.en) && !/直接|直達|直达/u.test(row.yue)) {
+      add(row,'en','unspoken-direct-path','源文去到某处未必含“直接到达”；即系是解释语，核对英文是否新增路径含义。');
+    }
+    if (/(?:呢|[嚟黎來来])緊嘅市[場场]/u.test(row.yue)
+      && /\btight[ -]market\b|\bupcoming\s+market\b/iu.test(row.en)
+      && /health\s*care|healthcare|financial|地[產产]|板[塊块]|sector/iu.test(localSource)) {
+      add(row,'source','sector-leading-source-unclear','板块语境的呢緊可能是lead緊，也可能是未来表达；先回听源稿，不能自行补成领涨或tight market。','source');
+    }
+    if (/^[.。]\s*[A-Za-z]/u.test(row.en)) add(row,'en','orphan-leading-period','英文句首有孤立句点；结合上一条清理标点，不删除实质内容。','style');
     const duration=row.en.match(/\b(?:for|over)\s+(?:almost\s+|nearly\s+)?(?:\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten)(?:\s+and\s+a\s+half)?\s+(months?|weeks?|years?)\b/iu);
     const sourceUnit=duration&&(/^month/iu.test(duration[1])?/月|month/iu:/^week/iu.test(duration[1])?/周|週|礼拜|禮拜|week/iu:/年|year/iu);
     if (duration && !sourceUnit.test(localSource)) {

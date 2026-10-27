@@ -47,10 +47,17 @@ test('HTTP upload reaches English SRT with real media tools, only a loopback mod
       let payload;
       if (tool === 'submit_service_check') payload = { ok: true };
       else if (tool === 'submit_inventory') payload = { frames: input.frames.map(f => ({ frameId: f.frameId, title: '', terms: [], unclear: [] })) };
-      else if (tool === 'submit_review') payload = { rows: input.targetRows.map(r => ({ id: r.id, changes: [], issues: [] })), visualTerms: [] };
+      else if (tool === 'submit_review') {
+        assert.ok(input.sourceReviewGuidance.some(g=>g.id==='chart-quantity-scale'));
+        payload = { rows: input.targetRows.map(r => ({ id: r.id, changes: [], issues: [] })), visualTerms: [] };
+      }
       else if (tool === 'submit_english') payload = { translations: input.targetRows.map(r => ({ id: r.id, en: 'The market rose today.' })), protectedFacts: [], notes: [] };
       else if (tool === 'submit_english_review') payload = { checkedIds: input.targetRows.map(r => r.id), patches: [], issues: [] };
-      else if (tool === 'submit_track_audit') payload = { checkedIds: input.targetRows.map(r => r.id), issues: [] };
+      else if (tool === 'submit_track_audit') {
+        assert.equal(input.generalTranslationRules.version,'2026-10-27.general.3');
+        assert.ok(input.generalTranslationRules.rules.some(r=>r.id==='retest-conditionality'));
+        payload = { checkedIds: input.targetRows.map(r => r.id), issues: [] };
+      }
       else throw Error('Unexpected model tool ' + tool);
       res.end(JSON.stringify({ content: [{ type: 'tool_use', name: tool, input: payload }] }));
     } catch (error) { failures.push(error.message); res.statusCode = 500; res.end(JSON.stringify({ error: 'mock validation failed' })); }
@@ -101,6 +108,11 @@ test('HTTP upload reaches English SRT with real media tools, only a loopback mod
     assert.equal(asrIntent.timeoutMs, 480000);
     const checkpoint = JSON.parse(await fs.readFile(path.join(app.data, id, 'workflow-checkpoint.json'), 'utf8'));
     assert.equal(checkpoint.media.asrUpload, 'mp3-64k-mono16k-v1');
+    const sourceRules=JSON.parse(await fs.readFile(path.join(app.data,id,'lexicon-snapshot.json'),'utf8'));
+    const translationRules=JSON.parse(await fs.readFile(path.join(app.data,id,'cantones-rules-snapshot.json'),'utf8'));
+    assert.equal(sourceRules.version,'2026-10-27.1.general');
+    assert.ok(sourceRules.reviewGuidance.some(g=>g.id==='chart-quantity-scale'));
+    assert.equal(translationRules.rules.version,'2026-10-27.general.3');
     const before = calls.length;
     const finished = await fetch(app.origin + '/cantones/api/jobs/' + id + '/resume', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
     assert.equal(finished.status, 400); assert.equal(calls.length, before);
@@ -109,6 +121,8 @@ test('HTTP upload reaches English SRT with real media tools, only a loopback mod
     await fs.writeFile(path.join(app.data, id, 'status.json'), JSON.stringify({ id, stage: 'error', message: 'simulated status interruption', progress: 99 }));
     const resume = await fetch(app.origin + '/cantones/api/jobs/' + id + '/resume', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
     assert.equal(resume.status, 200); await complete(); assert.equal(calls.length, before);
+    assert.deepEqual(JSON.parse(await fs.readFile(path.join(app.data,id,'lexicon-snapshot.json'),'utf8')),sourceRules);
+    assert.deepEqual(JSON.parse(await fs.readFile(path.join(app.data,id,'cantones-rules-snapshot.json'),'utf8')),translationRules);
     assert.equal(calls.filter(x => x === 'asr').length, 1); assert.deepEqual(failures, []);
     const failed = await start({ FFPROBE_PATH: path.join(folder, 'missing-ffprobe') }); broken = failed.proc;
     assert.equal(failed.config.asr, true); assert.equal(failed.config.translation, true);

@@ -8,7 +8,7 @@ export function generalLexicon(lexicon) {
   // Source-dependent numeric evidence must never become a global correction.
   return { version: `${lexicon.version}.general`, purpose: lexicon.purpose,
     precisionPolicy: { allowEvidenceBackedPrecision: false, conditions: lexicon.precisionPolicy?.conditions ?? [] },
-    protectedTerms: lexicon.protectedTerms,
+    protectedTerms: lexicon.protectedTerms, reviewGuidance: lexicon.reviewGuidance ?? [],
     rules: lexicon.rules.filter(rule => !rule.documentSpecific && !rule.rowIds).map(({ source: _source, ...rule }) => rule), documentCorrections: [] };
 }
 export function reviewTriggers(rows, lexicon) {

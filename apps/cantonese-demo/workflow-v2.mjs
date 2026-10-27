@@ -171,7 +171,9 @@ export async function prepareSource(dir, config, update, { retryUnknown = false,
         }
       }
       const input = { targetRows: targets.map(thin), contextRows: [...context(initial.rows, targets).before, ...context(initial.rows, targets).after], glossary: job.glossary,
-        triggers: triggers.filter(t => targets.some(row => row.id === t.rowId)), lexicon: frozenLexicon.rules, precisionPolicy: '保留口述约数；没有本片同对象授权不得用画面精确值扩写。', referenceIncluded: false,
+        triggers: triggers.filter(t => targets.some(row => row.id === t.rowId)), lexicon: frozenLexicon.rules,
+        ...(Array.isArray(frozenLexicon.reviewGuidance) ? { sourceReviewGuidance: frozenLexicon.reviewGuidance } : {}),
+        precisionPolicy: '保留口述约数；没有本片同对象授权不得用画面精确值扩写。', referenceIncluded: false,
         ...(inventory ? { visualInventory: inventory.frames.filter(f => f.time >= targets[0].start - 15 && f.time <= targets.at(-1).end + 5), ocrIsUnverified: true, inventoryInstruction: 'Independent OCR is fallible context. Verify corrections against the actual attached same-time images.' } : {}) };
       await writeJson(path.join(dir, `review-frames-${n}.json`), frames.map(({ path: _, ...f }) => f));
       const response = await modelTool(dir, `source-review-${n}`, config.translation, { prompt: VISUAL_REVIEW_PROMPT + (independentVisualInventory ? '\n本介面使用繁體中文；reason請用繁體中文。原始粤語、英文專名與引文不得為了介面語言而轉換。每項issue都要標註action：真正有缺詞、近音歧義、詞庫要求回聽或同一對象音圖衝突時為requires-review；僅缺乏圖表佐證、一般觀察或未要求改字的提醒為informational。任務是校正轉寫，無須驗證講者市場觀點的真偽。沒有圖中證據不等於原文有錯；明確說percent就是百分比，不能無端懷疑為百分點。' : ''), input, tool: independentVisualInventory ? SIMPLE_REVIEW_TOOL : REVIEW_TOOL, images: frames, retryUnknown,
