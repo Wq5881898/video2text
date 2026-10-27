@@ -85,6 +85,10 @@ export function quarantineEnglishReview(payload, rows) {
     else quarantinedEvidence.push({ kind: 'unmapped-issue', original: issue });
   }
   for (const patch of payload.patches) {
+    if (rows.some(r => r.id === patch.id) && typeof patch.from === 'string' && patch.from && patch.from === patch.to) {
+      quarantinedEvidence.push({ kind: 'no-op', original: patch });
+      continue;
+    }
     try {
       // Keep exact-span, source-quote and overlap checks. An invalid suggestion
       // cannot overwrite the independent draft or discard valid earlier edits.

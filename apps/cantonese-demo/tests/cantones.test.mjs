@@ -82,6 +82,10 @@ test('ungrounded English proposals cannot change drafts or suppress complete-ID 
   assert.throws(() => quarantineEnglishReview({ checkedIds: [], patches: [], issues: [] }, rows), /every ordered/);
   const numerical = quarantineEnglishReview({ checkedIds: ['s1'], patches: [{ ...wrong, sourceQuote: '20%' }], issues: [] }, rows);
   assert.equal(applyEnglishReview(rows, numerical)[0].en, rows[0].en);
+  const noop = quarantineEnglishReview({ checkedIds: ['s1'], patches: [{ ...good, to: good.from }], issues: [] }, rows);
+  assert.deepEqual(noop.patches, []); assert.deepEqual(noop.issues, []);
+  assert.equal(noop.quarantinedEvidence[0].kind, 'no-op');
+  assert.equal(applyEnglishReview(rows, noop)[0].en, rows[0].en);
 });
 
 test('the only English download gate rejects stale source and returns the original filename and draft status', () => {
