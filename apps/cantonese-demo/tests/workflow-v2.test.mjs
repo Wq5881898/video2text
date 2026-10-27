@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chunkPlan, validateTracks, validateAudit, prepareSource, translateApproved } from '../workflow-v2.mjs';
+import { chunkPlan, asrUploadEncoding, validateTracks, validateAudit, prepareSource, translateApproved } from '../workflow-v2.mjs';
 import { WORKFLOW_VERSION, generalLexicon, reviewTriggers, mergeReview, assertSourceApproved, sourceHash } from '../workflow-checks.mjs';
 import { wrapCaption, publicationIssues, renderDelivery, referenceOwnership } from '../public/subtitle-layout.mjs';
 import { recordedRequest, modelTool, digest } from '../model-client.mjs';
@@ -25,6 +25,22 @@ test('arbitrary-length audio uses contiguous bounded chunks near its own pauses'
     chunks.forEach((c, i) => { assert.ok(c.duration > 0 && c.duration <= 450); if (i) assert.equal(c.offset, chunks[i-1].offset + chunks[i-1].duration); });
   }
   assert.equal(chunkPlan(883.227, [430])[0].duration, 430);
+});
+
+test('small uploads cover the whole film once, freeze encoding and preserve legacy caches', () => {
+  const duration = 945.818438;
+  const chunks = chunkPlan(duration, [448.5, 111, 109, 899, NaN], { maxSeconds: 120, pauseWindow: 30 });
+  assert.equal(chunks[0].duration, 111);
+  assert.equal(chunks[0].offset, 0);
+  assert.equal(chunks.at(-1).offset + chunks.at(-1).duration, duration);
+  for (const [i, c] of chunks.entries()) {
+    assert.ok(c.duration > 0 && c.duration <= 120);
+    if (i) assert.equal(c.offset, chunks[i - 1].offset + chunks[i - 1].duration);
+  }
+  assert.equal(asrUploadEncoding({}).format, 'flac');
+  assert.equal(asrUploadEncoding({ asrUpload: 'mp3-64k-mono16k-v1' }).mimeType, 'audio/mpeg');
+  assert.throws(() => asrUploadEncoding({ asrUpload: 'unknown' }));
+  for (const maxSeconds of [0, -1, Infinity, 451]) assert.throws(() => chunkPlan(duration, [], { maxSeconds }));
 });
 
 test('new-video checks remove sample-specific answers and discover unseen names and amounts', async () => {

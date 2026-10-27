@@ -67,18 +67,26 @@ export function validateAudit(payload, targets, { quarantineUnverified = false }
   }
   return { ...payload, issues: verified, unverifiedIssues };
 }
-export function chunkPlan(duration, silence = []) {
+export function chunkPlan(duration, silence = [], { maxSeconds = 450, pauseWindow = 100 } = {}) {
+  if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(maxSeconds) || maxSeconds <= 0 || maxSeconds > 450 || !Number.isFinite(pauseWindow) || pauseWindow <= 0 || pauseWindow > maxSeconds) throw Error('Invalid audio chunk plan');
   const chunks = []; let offset = 0;
   while (offset < duration - 0.001) {
-    let end = Math.min(duration, offset + 450);
+    let end = Math.min(duration, offset + maxSeconds);
     let cutReason = end < duration ? 'no-pause-found-review-boundary' : 'end-of-media';
     if (end < duration) {
-      const candidates = silence.filter(t => t > offset + 350 && t <= end);
-      if (candidates.length) { end = candidates.at(-1); cutReason = 'detected-pause'; }
+      const candidates = silence.filter(t => Number.isFinite(t) && t > offset + maxSeconds - pauseWindow && t <= end);
+      if (candidates.length) { end = Math.max(...candidates); cutReason = 'detected-pause'; }
     }
     chunks.push({ index: chunks.length, offset, duration: end - offset, cutReason }); offset = end;
   }
   return chunks;
+}
+// Freeze the upload format in each new media checkpoint. Older checkpoints
+// retain their FLAC files, chunk boundaries and paid-request fingerprints.
+export function asrUploadEncoding(media) {
+  if (!media.asrUpload) return { format: 'flac', mimeType: 'audio/flac', args: ['-c:a', 'flac'] };
+  if (media.asrUpload !== 'mp3-64k-mono16k-v1') throw Error('Unknown checkpoint audio encoding');
+  return { format: 'mp3', mimeType: 'audio/mpeg', args: ['-ac', '1', '-ar', '16000', '-c:a', 'libmp3lame', '-b:a', '64k'] };
 }
 const thin = row => ({ id: row.id, start: row.start, end: row.end, yue: row.yue });
 const context = (rows, target) => {
@@ -111,18 +119,29 @@ export async function prepareSource(dir, config, update, { retryUnknown = false,
     if (!Number.isFinite(audioDuration) || Math.abs(audioDuration - duration) > 0.5) throw new Error('音轨与视频时长偏差超过0.5秒，需检查媒体起始偏移');
     const silences = await runProcess(config.ffmpeg, ['-hide_banner', '-i', audio, '-af', 'silencedetect=noise=-35dB:d=0.4', '-f', 'null', '-'], 180000, true);
     const pauses = [...silences.matchAll(/silence_end: ([\d.]+) \| silence_duration: ([\d.]+)/gu)].map(m => Number(m[1]) - Number(m[2]) / 2);
-    cp.media = { duration, audioDuration, video: probe.streams.some(s => s.codec_type === 'video'), chunks: chunkPlan(audioDuration, pauses) }; await save();
+    cp.media = { duration, audioDuration, video: probe.streams.some(s => s.codec_type === 'video'),
+      asrUpload: 'mp3-64k-mono16k-v1', chunks: chunkPlan(audioDuration, pauses, { maxSeconds: 120, pauseWindow: 30 }) }; await save();
   }
   const duration = cp.media.duration;
   if (!cp.sourceRows) {
     const units = [];
+    const encoding = asrUploadEncoding(cp.media);
     for (const chunk of cp.media.chunks) {
       await update('transcribing', `MiniMax识别音轨 ${chunk.index + 1}/${cp.media.chunks.length}（粤语）`, 15 + Math.round(20 * chunk.index / cp.media.chunks.length));
-      const file = path.join(dir, `chunk-${chunk.index}.flac`);
-      try { await fs.access(file); } catch { await runProcess(config.ffmpeg, ['-v', 'error', '-y', '-i', path.join(dir, 'audio.flac'), '-ss', String(chunk.offset), '-t', String(chunk.duration), '-c:a', 'flac', file]); }
+      const file = path.join(dir, `chunk-${chunk.index}.${encoding.format}`);
+      try { await fs.access(file); } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+        // Cut from the lossless master; never accumulate offsets by concatenating
+        // padded MP3 durations. The source interval remains the time authority.
+        await runProcess(config.ffmpeg, ['-v', 'error', '-nostdin', '-n', '-i', path.join(dir, 'audio.flac'), '-ss', String(chunk.offset), '-t', String(chunk.duration), ...encoding.args, file]);
+      }
+      const encoded = JSON.parse(await runProcess(config.ffprobe, ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', file]));
+      const stream = encoded.streams?.find(s => s.codec_type === 'audio');
+      const encodedDuration = Number(encoded.format?.duration);
+      if (stream?.codec_name !== encoding.format || stream.channels !== 1 || Number(stream.sample_rate) !== 16000 || !Number.isFinite(encodedDuration) || Math.abs(encodedDuration - chunk.duration) > 0.25) throw Error('ASR音频分块格式或时长校验失败');
       const bytes = await fs.readFile(file);
       if (bytes.length > 50 * 1024 * 1024 || chunk.duration > 500) throw new Error('音频分块超出ASR限制');
-      const form = new FormData(); form.append('file', new Blob([bytes], { type: 'audio/flac' }), `chunk-${chunk.index}.flac`); form.append('model', config.asr.model); form.append('response_format', 'verbose_json'); form.append('timestamp_level', 'word');
+      const form = new FormData(); form.append('file', new Blob([bytes], { type: encoding.mimeType }), `chunk-${chunk.index}.${encoding.format}`); form.append('model', config.asr.model); form.append('response_format', 'verbose_json'); form.append('timestamp_level', 'word');
       const raw = await recordedAsrRequest(dir, `asr-${chunk.index}`, config.asr, { body: form, identity: { model: config.asr.model, language: 'yue', response_format: 'verbose_json', timestamp_level: 'word', offset: chunk.offset, duration: chunk.duration, audioSha256: digest(bytes) }, retryUnknown, fetchImpl: asrFetchImpl });
       units.push(...normalizeMiniMaxUnits(raw, chunk.offset, chunk.duration, chunk.index));
     }

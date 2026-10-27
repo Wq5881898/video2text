@@ -36,6 +36,19 @@ Connection checks send a small text request and cache successful checks for five
 minutes. ASR and image permissions are confirmed by their first actual requests.
 The offline tests do not make paid provider requests.
 
+New jobs retain a lossless master locally and send mono 16 kHz, 64 kbps MP3
+chunks of at most 120 seconds to ASR, cutting near pauses where possible. Each
+chunk is cut directly from its original source interval; MP3 padding never
+advances the next chunk's timestamp. Codec, sample rate, channels and duration
+are checked before submission. The eight-minute ASR budget remains configurable
+through `MINIMAX_ASR_TIMEOUT_MS`.
+
+The media checkpoint freezes the upload encoding and boundaries. Existing jobs
+without that field continue using their original FLAC chunks and request cache.
+To test the new upload plan for an old failed job, create a separate job from the
+same source media and preserve the old job and request records; do not replace
+its checkpoint or silently resend its unknown requests.
+
 ## NAS deployment
 
 Use the existing `deploy/nas/compose.yaml`; it includes the `cantones` service and

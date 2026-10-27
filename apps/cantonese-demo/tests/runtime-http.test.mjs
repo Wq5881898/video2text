@@ -30,6 +30,15 @@ test('HTTP upload reaches English SRT with real media tools, only a loopback mod
       res.setHeader('content-type', 'application/json');
       if (req.url === '/speech_to_text') {
         assert.equal(req.headers.language, 'yue'); calls.push('asr');
+        const multipart = await new Response(Buffer.concat(parts), { headers: { 'content-type': req.headers['content-type'] } }).formData();
+        const audio = multipart.get('file');
+        assert.equal(audio.type, 'audio/mpeg'); assert.equal(audio.name, 'chunk-0.mp3');
+        const received = path.join(folder, 'received.mp3');
+        await fs.writeFile(received, Buffer.from(await audio.arrayBuffer()));
+        const probe = JSON.parse(await runProcess(process.env.FFPROBE_PATH || 'ffprobe', ['-v', 'error', '-show_format', '-show_streams', '-of', 'json', received]));
+        assert.equal(probe.streams[0].codec_name, 'mp3');
+        assert.equal(probe.streams[0].channels, 1); assert.equal(Number(probe.streams[0].sample_rate), 16000);
+        assert.ok(Math.abs(Number(probe.format.duration) - 2) < .25);
         res.end(JSON.stringify({ text: '今日市場上升。', segments: [{ start: .1, end: 1.5, text: '今日市場上升。' }] })); return;
       }
       assert.equal(req.url, '/anthropic/v1/messages');
@@ -90,6 +99,8 @@ test('HTTP upload reaches English SRT with real media tools, only a loopback mod
     assert.match(srt, /The market rose today\./); assert.match(srt, /00:00:00,100 --> 00:00:01,500/);
     const asrIntent = JSON.parse(await fs.readFile(path.join(app.data, id, 'requests/asr-0-0-intent.json'), 'utf8'));
     assert.equal(asrIntent.timeoutMs, 480000);
+    const checkpoint = JSON.parse(await fs.readFile(path.join(app.data, id, 'workflow-checkpoint.json'), 'utf8'));
+    assert.equal(checkpoint.media.asrUpload, 'mp3-64k-mono16k-v1');
     const before = calls.length;
     const finished = await fetch(app.origin + '/cantones/api/jobs/' + id + '/resume', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
     assert.equal(finished.status, 400); assert.equal(calls.length, before);
