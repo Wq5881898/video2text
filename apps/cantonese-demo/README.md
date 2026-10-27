@@ -66,6 +66,12 @@ Every pending item still requires a nonempty evidence note and resolved words;
 it records `assistantReviewedIds`, leaves `humanReviewedIds` empty and never
 claims whole-film human review. The normal UI continues to record human review.
 
+English correction proposals receive the same treatment: an unverifiable quote,
+replacement span or overlapping patch is withheld, the independent draft is
+retained, and `english-evidence-*.json` records the proposal. Ordered target-ID
+coverage remains mandatory and the corrected text still receives its separate
+semantic audit. Withheld proposals remain visible as draft review questions.
+
 ## NAS deployment
 
 Use the existing `deploy/nas/compose.yaml`; it includes the `cantones` service and

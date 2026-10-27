@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { inventoryTimes, validateInventory } from '../visual-inventory.mjs';
-import { CANTONES_PROFILE, sourceQuestions, confirmCantonesSource, projectRevision, assertCantonesSource, validateEnglishReview, applyEnglishReview, cantonesDelivery, saveCantonesEnglish } from '../cantones-workflow.mjs';
+import { CANTONES_PROFILE, sourceQuestions, confirmCantonesSource, projectRevision, assertCantonesSource, validateEnglishReview, quarantineEnglishReview, applyEnglishReview, cantonesDelivery, saveCantonesEnglish } from '../cantones-workflow.mjs';
 import { sourceHash } from '../workflow-checks.mjs';
 import { COPY, message } from '../public/cantones-i18n.mjs';
 
@@ -67,6 +67,21 @@ test('English patches are local, source-grounded and cannot silently alter numer
   review.patches = [{ id: 's1', from: '20%', to: '30%', sourceQuote: '20%', reason: 'Guess' }];
   const output = applyEnglishReview(rows, review)[0]; assert.equal(output.en, rows[0].en); assert.equal(output.englishQuestions.length, 1);
   review.checkedIds = []; assert.throws(() => validateEnglishReview(review, rows), /every/);
+});
+
+test('ungrounded English proposals cannot change drafts or suppress complete-ID and numerical safeguards', () => {
+  const rows = [{ id: 's1', yue: '成交量跌咗20%。', en: 'The turnover rate fell 20%.' }];
+  const good = { id: 's1', from: 'turnover rate', to: 'trading volume', sourceQuote: '成交量', reason: 'Correct the financial object' };
+  const wrong = { id: 's1', from: '20%', to: '30%', sourceQuote: '不存在的引文', reason: 'Unverified guess' };
+  const review = quarantineEnglishReview({ checkedIds: ['s1'], patches: [good, wrong, { ...good, to: 'volume' }], issues: [{ id: 'invented', reason: 'Wrong ID' }] }, rows);
+  assert.deepEqual(review.patches, [good]);
+  assert.equal(review.quarantinedEvidence.length, 3);
+  const result = applyEnglishReview(rows, review);
+  assert.equal(result[0].en, 'The trading volume fell 20%.');
+  assert.ok(result[0].englishQuestions.some(i => i.rejectedPatch?.to === '30%'));
+  assert.throws(() => quarantineEnglishReview({ checkedIds: [], patches: [], issues: [] }, rows), /every ordered/);
+  const numerical = quarantineEnglishReview({ checkedIds: ['s1'], patches: [{ ...wrong, sourceQuote: '20%' }], issues: [] }, rows);
+  assert.equal(applyEnglishReview(rows, numerical)[0].en, rows[0].en);
 });
 
 test('the only English download gate rejects stale source and returns the original filename and draft status', () => {
