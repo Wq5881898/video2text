@@ -7,7 +7,7 @@ import { modelTool, digest, digestFile } from './model-client.mjs';
 import { recordedAsrRequest } from './asr-request.mjs';
 import { WORKFLOW_VERSION, generalLexicon, reviewTriggers, paragraphBatches, sourceHash, assertSourceApproved, remainingKnownTerms } from './workflow-checks.mjs';
 import { applyConfirmedTerminology, verifyProtectedTerms } from './terminology-review.mjs';
-import { VISUAL_REVIEW_PROMPT, REVIEW_TOOL, canonicalizeVisualPatches, validateVisualReview, applyLocalChanges } from './visual-review.mjs';
+import { VISUAL_REVIEW_PROMPT, REVIEW_TOOL, canonicalizeVisualPatches, quarantineVisualEvidence, validateVisualReview, applyLocalChanges } from './visual-review.mjs';
 import { validateRows } from './public/subtitles.mjs';
 import { ensureWrittenChinese } from './written-chinese.mjs';
 import { criticalTranslationIssues } from './translation-critical-checks.mjs';
@@ -179,8 +179,10 @@ export async function prepareSource(dir, config, update, { retryUnknown = false,
           if (independentVisualInventory && (!Array.isArray(payload?.rows) || payload.rows.some(row => !Array.isArray(row.issues) || row.issues.some(issue => !['requires-review', 'informational'].includes(issue.action))))) throw Error('Source issues must distinguish unresolved words from informational notes');
           const normalized = canonicalizeVisualPatches(payload, targets).payload;
           if (independentVisualInventory) for (const row of normalized.rows) for (const issue of row.issues) issue.action ??= 'requires-review';
-          return validateVisualReview(normalized, targets, frames.map(f => f.id));
+          const checked = quarantineVisualEvidence(normalized, targets, frames.map(f => f.id));
+          return { ...validateVisualReview(checked.payload, targets, frames.map(f => f.id)), quarantinedEvidence: checked.quarantinedEvidence };
         } });
+      await writeJson(path.join(dir, `review-evidence-${n}.json`), { quarantinedEvidence: response.quarantinedEvidence });
       for (const row of response.rows) {
         const original = targets.find(t => t.id === row.id), issues = [...row.issues], changes = [];
         for (const change of row.changes) {

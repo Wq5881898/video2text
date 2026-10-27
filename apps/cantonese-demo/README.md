@@ -55,6 +55,12 @@ scan fails, `inventory-sampling.json` records a periodic fallback; the regular
 samples and each source cue's full-resolution review image remain available.
 Resuming this stage reuses completed ASR requests.
 
+Unattached frame references are quarantined in `review-evidence-N.json`. A
+correction relying on one is withheld and becomes a source review question;
+unsupported inventory claims are excluded from accepted evidence. Frame IDs are
+never guessed or remapped. Valid claims still pass the strict evidence checker,
+and saved model responses can be revalidated without submitting them again.
+
 ## NAS deployment
 
 Use the existing `deploy/nas/compose.yaml`; it includes the `cantones` service and

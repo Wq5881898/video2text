@@ -56,6 +56,40 @@ export function canonicalizeVisualPatches(payload, sourceRows) {
   return { payload: { ...payload, rows, visualTerms }, warnings };
 }
 
+// Reject individual claims with unattached evidence, without discarding the
+// rest of a complete review. Never guess or remap a model's frame identifier.
+// The strict validator still checks every retained reference and text patch.
+export function quarantineVisualEvidence(payload, sourceRows, frameIds) {
+  const allowed = new Set(frameIds), quarantinedEvidence = [];
+  const unknown = ids => Array.isArray(ids) ? ids.filter(id => !allowed.has(id)) : [];
+  const rows = payload.rows.map(row => {
+    const source = sourceRows.find(r => r.id === row.id);
+    if (!source) throw Error('Unknown source review row');
+    const changes = [], issues = row.issues.map(issue => {
+      const invalid = unknown(issue.frameIds);
+      if (!invalid.length) return issue;
+      quarantinedEvidence.push({ kind: 'issue', rowId: row.id, original: issue, invalidFrameIds: invalid });
+      return { ...issue, frameIds: [], rejectedFrameIds: invalid,
+        reason: `${issue.reason}（截图引用未验证，未作为纠错证据。）` };
+    });
+    for (const change of row.changes) {
+      const invalid = unknown(change.frameIds);
+      if (!invalid.length) { changes.push(change); continue; }
+      quarantinedEvidence.push({ kind: 'change', rowId: row.id, original: change, invalidFrameIds: invalid });
+      issues.push({ text: change.from, suggestion: change.to, frameIds: [], action: 'requires-review', rejectedChange: change,
+        reason: `修改引用了本组未提供的截图，保留原文待核实：${change.reason}` });
+    }
+    return { ...row, changes, issues, yue: applyLocalChanges(source.yue, changes) };
+  });
+  const visualTerms = payload.visualTerms.filter(term => {
+    const invalid = unknown(term.frameIds);
+    if (!invalid.length) return true;
+    quarantinedEvidence.push({ kind: 'visual-term', original: term, invalidFrameIds: invalid });
+    return false;
+  });
+  return { payload: { ...payload, rows, visualTerms }, quarantinedEvidence };
+}
+
 export function parseReviewResponse(payload) {
   const tool = payload.content?.find(block => block.type === 'tool_use' && block.name === 'submit_review');
   if (tool) return typeof tool.input === 'string' ? JSON.parse(tool.input) : tool.input;

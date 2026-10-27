@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyLocalChanges, validateVisualReview, canonicalizeVisualPatches, partitionReviewedRows } from '../visual-review.mjs';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { modelTool } from '../model-client.mjs';
+import { applyLocalChanges, validateVisualReview, canonicalizeVisualPatches, quarantineVisualEvidence, partitionReviewedRows } from '../visual-review.mjs';
 
 test('review applies explicit non-overlapping edits and rejects silent rewriting', () => {
   const source = [{ id: 'a', start: 1, end: 5, yue: '呢個X指數用二八天平均線。' }];
@@ -18,6 +22,34 @@ test('invented frames, missing rows and unsupported numeric corrections fail val
   assert.throws(() => validateVisualReview(payload, source, ['f1']), /Numeric correction needs visual evidence/);
   assert.throws(() => validateVisualReview({ ...payload, rows: [] }, source, ['f1']), /row count/);
   assert.throws(() => validateVisualReview({ ...payload, rows: [{ ...payload.rows[0], changes: [{ ...change, basis: 'visual', frameIds: ['invented'] }] }] }, source, ['f1']), /Unknown visual/);
+});
+test('bad frame claims are quarantined, numbers stay unchanged, and cached responses cost no second call', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'visual-evidence-'));
+  try {
+    const source = [{ id: 'a', start: 1, end: 4, yue: 'SMP升5%。' }];
+    const known = { from: 'SMP', to: 'S&P', category: 'term', basis: 'visual', frameIds: ['f1'], reason: '同图指数名称', confidence: 'high' };
+    const unverified = { from: '5%', to: '7%', category: 'number', basis: 'visual', frameIds: ['other-slide'], reason: '未附的画面', confidence: 'high' };
+    const payload = { rows: [{ id: 'a', yue: 'S&P升7%。', changes: [known, unverified], issues: [{ text: '5%', suggestion: '', reason: '待核对', frameIds: ['f0000'], action: 'requires-review' }] }], visualTerms: [{ text: 'S&P', frameIds: ['f1'] }, { text: '7%', frameIds: ['other-slide'] }] };
+    let calls = 0;
+    const options = { prompt: 'unchanged request', input: { targetRows: source }, tool: { name: 'submit_review', input_schema: {} }, maxRepairs: 0,
+      fetchImpl: async () => { calls++; return Response.json({ content: [{ type: 'tool_use', name: 'submit_review', input: payload }] }); } };
+    const config = { apiKey: 'synthetic', baseUrl: 'https://unit.invalid', model: 'MiniMax-M3' };
+    await assert.rejects(modelTool(dir, 'batch', config, { ...options, validate: p => validateVisualReview(canonicalizeVisualPatches(p, source).payload, source, ['f1']) }), /Unknown visual/);
+    const result = await modelTool(dir, 'batch', config, { ...options, validate: p => {
+      const q = quarantineVisualEvidence(canonicalizeVisualPatches(p, source).payload, source, ['f1']);
+      assert.equal(q.quarantinedEvidence.length, 3);
+      return validateVisualReview(q.payload, source, ['f1']);
+    } });
+    assert.equal(calls, 1);
+    assert.equal(result.rows[0].yue, 'S&P升5%。');
+    assert.equal(result.rows[0].start, 1); assert.equal(result.rows[0].end, 4);
+    assert.deepEqual(result.rows[0].changes, [known]);
+    assert.ok(result.rows[0].issues.some(i => i.rejectedChange?.to === '7%' && i.action === 'requires-review'));
+    assert.deepEqual(result.visualTerms, [{ text: 'S&P', frameIds: ['f1'] }]);
+  } finally {
+    if (path.dirname(path.resolve(dir)) !== path.resolve(os.tmpdir())) throw Error('Refusing cleanup outside temporary directory');
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 });
 test('patch reconstruction discards contradictory free-form text and logs it', () => {
   const source = [{ id: 'a', yue: '甲指數升。' }];
