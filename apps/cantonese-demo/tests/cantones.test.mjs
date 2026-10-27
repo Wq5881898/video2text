@@ -36,6 +36,21 @@ test('known error retention requires evidence notes and missing source words can
   assert.throws(() => confirmCantonesSource(p, { revision: projectRevision(p), rows: [{ id: 's0001', yue: '[unclear]' }] }), /missing/);
 });
 
+test('delegated assistant review records its evidence without pretending a human reviewed the source', () => {
+  const p = fixture(), body = { revision: projectRevision(p), reviewActor: 'assistant', rows: [{ id: 's0001', yue: p.rows[0].yue }] };
+  assert.throws(() => confirmCantonesSource(p, body), /evidence note/);
+  body.rows[0].note = 'Assistant checked the same-time frame and retained the original term; no human review claimed.';
+  const result = confirmCantonesSource(p, body);
+  assert.equal(result.sourceDecision.mode, 'assistant-assisted-review');
+  assert.deepEqual(result.sourceDecision.humanReviewedIds, []);
+  assert.deepEqual(result.sourceDecision.assistantReviewedIds, ['s0001']);
+  assert.equal(result.sourceDecision.wholeFilmHumanReviewed, false);
+  assert.equal(result.wholeFilmAccepted, false);
+  assertCantonesSource(result);
+  assert.throws(() => confirmCantonesSource(p, { ...body, reviewActor: 'invented' }), /actor/);
+  assert.throws(() => confirmCantonesSource(p, { ...body, rows: [{ id: 's0001', yue: '[unclear]', note: 'Missing words' }] }), /missing/);
+});
+
 test('lack of a chart is informational, while fixed expressions requiring listening stay in the source gate', () => {
   const p = fixture(); p.rows[0].sourceIssues[0].action = 'informational';
   assert.equal(sourceQuestions(p).length, 0);

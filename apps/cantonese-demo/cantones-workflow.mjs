@@ -34,19 +34,24 @@ function validateSource(project) {
 
 export function confirmCantonesSource(project, body) {
   if (project.profile !== CANTONES_PROFILE || body.revision !== projectRevision(project)) throw Error('The transcript changed. Reload before confirming.');
+  const reviewActor = body.reviewActor ?? 'human';
+  if (!['human', 'assistant'].includes(reviewActor)) throw Error('Invalid source review actor');
   const questions = sourceQuestions(project), ids = questions.map(q => q.id);
   if (!ids.length || !Array.isArray(body.rows) || body.rows.length !== ids.length || new Set(body.rows.map(r => r.id)).size !== ids.length || ids.some(id => !body.rows.some(r => r.id === id))) throw Error('Confirm every pending source item exactly once');
   const rows = project.rows.map(row => {
     const edit = body.rows.find(r => r.id === row.id);
     if (!edit) return row;
     if (typeof edit.yue !== 'string' || !edit.yue.trim() || edit.yue.length > 20000 || unclear(edit.yue)) throw Error('Resolve the missing source words before continuing');
+    if (reviewActor === 'assistant' && !String(edit.note ?? '').trim()) throw Error('Assistant review requires an evidence note for every source question');
     const retainedKnown = (project.residualTerms ?? []).some(r => r.rowId === row.id && edit.yue.includes(r.from));
     if (retainedKnown && !String(edit.note ?? '').trim()) throw Error('Explain why the known error spelling is being retained');
     return { ...row, yue: edit.yue.trim(), sourceReviewed: true, sourceReviewNote: String(edit.note ?? '').slice(0, 2000), en: '', stale: false, reviewed: false };
   });
   const next = { ...project, rows, translationSourceHash: null, wholeFilmAccepted: false };
   validateSource(next);
-  next.sourceDecision = { mode: 'automatic-with-targeted-human-review', humanReviewedIds: ids, sourceHash: sourceHash(rows), at: new Date().toISOString(), wholeFilmHumanReviewed: false };
+  next.sourceDecision = { mode: reviewActor === 'human' ? 'automatic-with-targeted-human-review' : 'assistant-assisted-review',
+    humanReviewedIds: reviewActor === 'human' ? ids : [], ...(reviewActor === 'assistant' ? { assistantReviewedIds: ids } : {}),
+    sourceHash: sourceHash(rows), at: new Date().toISOString(), wholeFilmHumanReviewed: false };
   return next;
 }
 

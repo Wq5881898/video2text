@@ -61,6 +61,11 @@ unsupported inventory claims are excluded from accepted evidence. Frame IDs are
 never guessed or remapped. Valid claims still pass the strict evidence checker,
 and saved model responses can be revalidated without submitting them again.
 
+Delegated source confirmation can explicitly send `reviewActor: "assistant"`.
+Every pending item still requires a nonempty evidence note and resolved words;
+it records `assistantReviewedIds`, leaves `humanReviewedIds` empty and never
+claims whole-film human review. The normal UI continues to record human review.
+
 ## NAS deployment
 
 Use the existing `deploy/nas/compose.yaml`; it includes the `cantones` service and
