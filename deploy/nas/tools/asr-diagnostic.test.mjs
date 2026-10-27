@@ -12,7 +12,7 @@ const app = process.env.ASR_DIAGNOSTIC_APP_ROOT || fileURLToPath(new URL('../../
 const script = fileURLToPath(new URL('./asr-diagnostic.mjs', import.meta.url));
 const { runProcess } = await import(pathToFileURL(path.join(app, 'pipeline.mjs')));
 const job = '12345678-1234-1234-1234-123456789abc', run = 'controlled-test';
-async function fixture(handler, exercise) {
+async function fixture(handler, exercise, signal = 'sine=frequency=400:duration=70') {
   const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'asr-diagnostic-test-'));
   const server = http.createServer(handler), sockets = new Set();
   server.on('connection', socket => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); });
@@ -20,7 +20,7 @@ async function fixture(handler, exercise) {
   const jobDir = path.join(folder, job), dir = path.join(folder, 'asr-diagnostics', job, run);
   try {
     await fs.mkdir(jobDir);
-    await runProcess(process.env.FFMPEG_PATH || 'ffmpeg', ['-v', 'error', '-n', '-f', 'lavfi', '-i', 'sine=frequency=400:duration=70', '-ac', '1', '-ar', '16000', '-c:a', 'flac', path.join(jobDir, 'audio.flac')]);
+    await runProcess(process.env.FFMPEG_PATH || 'ffmpeg', ['-v', 'error', '-n', '-f', 'lavfi', '-i', signal, '-ac', '1', '-ar', '16000', '-c:a', 'flac', path.join(jobDir, 'audio.flac')]);
     await fs.writeFile(path.join(jobDir, 'status.json'), '{"stage":"error","original":true}');
     const invoke = (extra = [], env = {}) => new Promise(resolve => {
       const child = spawn(process.execPath, [script, `--app-root=${app}`, `--job=${job}`, `--run=${run}`, ...extra], {
@@ -81,4 +81,22 @@ test('a concurrent diagnostic or changed clip cannot start a paid request', asyn
     await fs.unlink(path.join(dir, 'running.lock'));
     const changed = await invoke(['--seconds=30', '--send']); assert.equal(changed.code, 1); assert.match(changed.err, /input changed/u); assert.equal(calls, 0);
   });
+});
+
+test('the MP3 comparison preserves the excerpt, reduces noisy audio size and sends the correct MIME through the same adapter', async () => {
+  let calls = 0;
+  await fixture(async (req, res) => {
+    calls++; const parts = []; for await (const b of req) parts.push(b); const body = Buffer.concat(parts).toString();
+    assert.match(body, /filename="clip\.mp3"/u); assert.match(body, /Content-Type: audio\/mpeg/iu);
+    assert.equal(req.headers.language, 'yue');
+    res.end(JSON.stringify({ text: '同一段。', segments: [{ start: 0.1, end: 1, text: '同一段。' }] }));
+  }, async ({ invoke, dir, jobDir }) => {
+    const prepared = await invoke(['--format=mp3']); assert.equal(prepared.code, 0, prepared.err); assert.equal(calls, 0);
+    const manifest = JSON.parse(await fs.readFile(path.join(dir, 'manifest.json'), 'utf8'));
+    assert.equal(manifest.plan.seconds, 60); assert.equal(manifest.plan.offset, 0); assert.equal(manifest.plan.bitrateKbps, 64);
+    assert.ok(Math.abs(manifest.duration - 60) < 0.2); assert.ok(manifest.bytes < 600000);
+    assert.ok(manifest.bytes < (await fs.stat(path.join(jobDir, 'audio.flac'))).size / 2);
+    const sent = await invoke(['--format=mp3', '--send']); assert.equal(sent.code, 0, sent.err); assert.equal(calls, 1);
+    const wrongFormat = await invoke(['--send']); assert.equal(wrongFormat.code, 1); assert.equal(calls, 1);
+  }, 'anoisesrc=color=white:duration=70:sample_rate=16000:seed=1');
 });

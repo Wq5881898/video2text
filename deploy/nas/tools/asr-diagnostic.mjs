@@ -11,10 +11,10 @@ import { performance } from 'node:perf_hooks';
 // Node's finish/bytesWritten indicate a local socket flush, NOT server receipt.
 const args = new Map();
 for (const arg of process.argv.slice(2)) {
-  const match = /^--(app-root|job|run|seconds|offset)=(.+)$/u.exec(arg);
+  const match = /^--(app-root|job|run|seconds|offset|format)=(.+)$/u.exec(arg);
   if (match && !args.has(match[1])) args.set(match[1], match[2]);
   else if (arg === '--send' && !args.has('send')) args.set('send', true);
-  else throw Error('Use --job=UUID --run=ID [--seconds=60 --offset=0 --app-root=PATH --send]');
+  else throw Error('Use --job=UUID --run=ID [--seconds=60 --offset=0 --format=flac|mp3 --app-root=PATH --send]');
 }
 process.umask(0o077);
 const appRoot = path.resolve(args.get('app-root') || fileURLToPath(new URL('../../../apps/cantonese-demo/', import.meta.url)));
@@ -24,8 +24,10 @@ const [{ loadConfig }, { readJson, writeJson, runProcess }, { digestFile }, { re
 ]);
 const job = args.get('job'), run = args.get('run');
 const seconds = Number(args.get('seconds') || 60), offset = Number(args.get('offset') || 0);
+const format = args.get('format') || 'flac';
 if (!/^[a-f0-9-]{36}$/u.test(job || '') || !/^[A-Za-z0-9_-]{1,64}$/u.test(run || '')) throw Error('Invalid job/run identity');
 if (!Number.isInteger(seconds) || seconds < 1 || seconds > 120 || !Number.isFinite(offset) || offset < 0) throw Error('Diagnostic clips must be 1–120 seconds with a nonnegative offset');
+if (!['flac', 'mp3'].includes(format)) throw Error('Diagnostic format must be flac or mp3');
 const data = path.resolve(process.env.CANTONES_DATA_DIR || path.join(appRoot, '.data'));
 const original = path.join(data, job, 'audio.flac');
 const dir = path.join(data, 'asr-diagnostics', job, run);
@@ -39,8 +41,10 @@ try {
   await lock.writeFile(JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
   const config = loadConfig(appRoot);
   const sourceHash = await digestFile(original), manifestFile = path.join(dir, 'manifest.json');
-  const clip = path.join(dir, 'clip.flac'), manifest = await readJson(manifestFile);
-  const plan = { sourceHash, offset, seconds };
+  const clip = path.join(dir, `clip.${format}`), manifest = await readJson(manifestFile);
+  // Preserve the existing FLAC plan/cache identity; a format comparison must
+  // use a new run ID and has its own immutable encoded-audio identity.
+  const plan = { sourceHash, offset, seconds, ...(format === 'mp3' ? { format, bitrateKbps: 64 } : {}) };
   const probe = async file => JSON.parse(await runProcess(config.ffprobe, ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', file]));
   let prepared;
   if (manifest) {
@@ -50,15 +54,16 @@ try {
     if (await fs.stat(clip).then(() => true, e => { if (e.code === 'ENOENT') return false; throw e; })) throw Error('Unregistered clip exists; use a fresh run ID');
     const input = await probe(original);
     if (offset + seconds > Number(input.format.duration) + 0.1) throw Error('Clip extends beyond the original audio');
-    await runProcess(config.ffmpeg, ['-v', 'error', '-nostdin', '-n', '-ss', String(offset), '-i', original, '-t', String(seconds), '-map', '0:a:0', '-ac', '1', '-ar', '16000', '-c:a', 'flac', clip]);
+    const encoding = format === 'mp3' ? ['-c:a', 'libmp3lame', '-b:a', '64k'] : ['-c:a', 'flac'];
+    await runProcess(config.ffmpeg, ['-v', 'error', '-nostdin', '-n', '-ss', String(offset), '-i', original, '-t', String(seconds), '-map', '0:a:0', '-ac', '1', '-ar', '16000', ...encoding, clip]);
     const info = await probe(clip), audio = info.streams.find(s => s.codec_type === 'audio'), duration = Number(info.format.duration);
-    if (audio?.codec_name !== 'flac' || audio.channels !== 1 || Number(audio.sample_rate) !== 16000 || Math.abs(duration - seconds) > 0.1) throw Error('Diagnostic audio failed validation');
-    prepared = { plan, duration, bytes: (await fs.stat(clip)).size, audioSha256: await digestFile(clip), at: new Date().toISOString() };
+    if (audio?.codec_name !== format || audio.channels !== 1 || Number(audio.sample_rate) !== 16000 || Math.abs(duration - seconds) > (format === 'mp3' ? 0.2 : 0.1)) throw Error('Diagnostic audio failed validation');
+    prepared = { plan, duration, format, bytes: (await fs.stat(clip)).size, audioSha256: await digestFile(clip), at: new Date().toISOString() };
     await writeJson(manifestFile, prepared);
   }
   await writeJson(path.join(dir, 'status.json'), { status: 'prepared', ...prepared, at: new Date().toISOString() });
   if (!args.has('send')) {
-    console.log(JSON.stringify({ status: 'prepared', run, seconds: prepared.duration, bytes: prepared.bytes, externalRequestsMade: 0 }));
+    console.log(JSON.stringify({ status: 'prepared', run, format, seconds: prepared.duration, bytes: prepared.bytes, externalRequestsMade: 0 }));
   } else {
     if (!config.asr.apiKey) throw Error('ASR credential is not configured');
     const traceFile = path.join(dir, 'transport.jsonl'), started = performance.now();
@@ -98,14 +103,14 @@ try {
     undoTrace = () => { for (const [client, request] of originals) client.request = request; for (const timer of timers) clearInterval(timer); };
     await writeJson(path.join(dir, 'status.json'), { status: 'running', run, seconds: prepared.duration, at: new Date().toISOString() });
     const bytes = await fs.readFile(clip), form = new FormData();
-    form.append('file', new Blob([bytes], { type: 'audio/flac' }), 'clip.flac');
+    form.append('file', new Blob([bytes], { type: format === 'mp3' ? 'audio/mpeg' : 'audio/flac' }), `clip.${format}`);
     form.append('model', config.asr.model); form.append('response_format', 'verbose_json'); form.append('timestamp_level', 'word');
     const raw = await recordedAsrRequest(dir, 'asr-diagnostic', config.asr, {
       body: form, identity: { model: config.asr.model, language: 'yue', response_format: 'verbose_json', timestamp_level: 'word', offset, duration: prepared.duration, audioSha256: prepared.audioSha256 },
       runtime: { healthDir: path.join(dir, 'provider-health') },
     });
     if (!raw.text?.trim() || !Array.isArray(raw.segments) || !raw.segments.length) throw Error('ASR returned no usable timed transcript; inspect the stored response');
-    const summary = { status: 'done', run, seconds: prepared.duration, elapsedMs: Math.round(performance.now() - started), requestsObserved: requests,
+    const summary = { status: 'done', run, format, seconds: prepared.duration, elapsedMs: Math.round(performance.now() - started), requestsObserved: requests,
       characters: raw.text.length, segments: raw.segments.length, traceFailed, at: new Date().toISOString() };
     await writeJson(path.join(dir, 'status.json'), summary); console.log(JSON.stringify(summary));
   }
