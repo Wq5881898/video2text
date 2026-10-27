@@ -37,7 +37,17 @@ export async function visualInventory(dir, source, media, config, update, { retr
   let frames = await readJson(path.join(dir, 'inventory-frames.json'));
   if (!frames) {
     await update('reading-frames', 'Reading video frames', 33);
-    const scan = await runProcess(config.ffmpeg, ['-hide_banner', '-i', source, '-an', '-vf', "select='gt(scene,0.22)',showinfo", '-fps_mode', 'vfr', '-f', 'null', '-'], 300000, true);
+    // Scene suggestions supplement periodic frames and every cue's own full-size
+    // screenshot. Do not make a whole-film HD pixel scan a processing barrier.
+    let scan = '', sampling = { method: 'keyframes-480px', timeoutMs: 60000, status: 'complete', periodicSeconds: 15 };
+    try {
+      scan = await runProcess(config.ffmpeg, ['-hide_banner', '-skip_frame', 'nokey', '-i', source, '-an', '-vf', "scale=480:-2,select='gt(scene,0.22)',showinfo", '-fps_mode', 'vfr', '-f', 'null', '-'], 60000, true);
+    } catch {
+      // Supplemental detection may fail on an unusual codec or slow worker.
+      // Keep complete periodic coverage and disclose the fallback in the job.
+      sampling = { ...sampling, status: 'periodic-fallback', reason: 'supplemental-scene-scan-unavailable' };
+    }
+    await writeJson(path.join(dir, 'inventory-sampling.json'), sampling);
     const scenes = [...scan.matchAll(/pts_time:([0-9.]+)/gu)].map(m => Number(m[1]));
     await fs.mkdir(path.join(dir, 'frames'), { recursive: true });
     frames = [];

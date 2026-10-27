@@ -49,6 +49,12 @@ To test the new upload plan for an old failed job, create a separate job from th
 same source media and preserve the old job and request records; do not replace
 its checkpoint or silently resend its unknown requests.
 
+Scene detection uses low-resolution keyframes with a one-minute budget. It adds
+suggested sampling times to the regular 15-second inventory. If this optional
+scan fails, `inventory-sampling.json` records a periodic fallback; the regular
+samples and each source cue's full-resolution review image remain available.
+Resuming this stage reuses completed ASR requests.
+
 ## NAS deployment
 
 Use the existing `deploy/nas/compose.yaml`; it includes the `cantones` service and
