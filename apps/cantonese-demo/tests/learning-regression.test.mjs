@@ -71,6 +71,16 @@ test('lower-band position check reads an indicator name split over neighboring E
   assert.equal(findings.length,1); assert.equal(findings[0].id,'s1');
 });
 
+test('an adjacent band warning neither falsely attaches to a trend-line break nor misses a later middle-band mention',()=>{
+  const rows=[row('s1','雖然今日跌破trend line。','Although it broke below this trend line today,'),
+    row('s2','但係喺Bollinger Band下方。','it is below the Bollinger Band.'),
+    row('s3','line。','line.'),row('s4','繼續。','Continue.'),row('s5','繼續。','Continue.'),
+    row('s6','medium line會有支持。','The medium line offers support.')];
+  const issues=criticalTranslationIssues(rows);
+  assert.deepEqual(issues.filter(i=>i.code==='bollinger-lower-position').map(i=>i.id),['s2']);
+  assert.ok(issues.some(i=>i.code==='bollinger-middle-band'&&i.id==='s6'));
+});
+
 test('unresolved sector source is distinguished from a proposed English correction',()=>{
   const rows=[row('s1','healthcare同financial原本呢啲係呢緊嘅市場。','These were the tight-market ones.')];
   const before=structuredClone(rows),issues=criticalTranslationIssues(rows);

@@ -28,12 +28,19 @@ export function criticalTranslationIssues(rows) {
     const localSource = rows.slice(Math.max(0,index-2),index+3).map(r=>r.yue).join(' ');
     const localEnglish = rows.slice(Math.max(0,index-2),index+3).map(r=>r.en).join(' ');
     const compactSource = localSource.replace(/[\s，,。；;]+/gu, '');
-    const bollinger = /bollinger|布林/iu.test(localSource);
+    const indicatorSource = rows.slice(Math.max(0,index-6),index+3)
+      .filter(r=>!Number.isFinite(row.start)||!Number.isFinite(r.start)||Math.abs(row.start-r.start)<=35)
+      .map(r=>r.yue).join(' ');
+    const bollinger = /bollinger|布林/iu.test(indicatorSource);
     if (bollinger && /\bmedium\s+line\b/iu.test(localEnglish) && /\bmedium\b/iu.test(row.en)) {
       add(row,'en','bollinger-middle-band','布林带中线应为 middle band/middle line；此提示不适用于 medium term 等其他表达。');
     }
-    if (bollinger && /\b(?:below|beneath)\b/iu.test(row.en)
-      && /\b(?:below|beneath)\s+(?:(?:the|its|his)\s+)?Bollinger\s+Bands?\b/iu.test(localEnglish)
+    // Start at THIS cue's below/beneath. A neighbouring Bollinger phrase must
+    // not make an unrelated trend-line break in this cue look like a band claim.
+    const belowBollinger = [...row.en.matchAll(/\b(?:below|beneath)\b/giu)].some(m=>
+      /^(?:below|beneath)\s+(?:(?:the|its|his)\s+)?Bollinger\s+Bands?\b/iu.test(
+        row.en.slice(m.index)+' '+rows.slice(index+1,index+3).map(r=>r.en).join(' ')));
+    if (bollinger && belowBollinger
       && /(?:Band|布林帶|布林带).{0,12}(?:下方|下邊|下边|下面)/iu.test(localSource)) {
       add(row,'en','bollinger-lower-position','源文“下方/下边”可能指带内下部或下轨支撑，英文 below 整条带可能改变技术位置；结合同期画面确认，不自动替换。');
     }
