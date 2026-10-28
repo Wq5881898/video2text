@@ -54,7 +54,7 @@ test('HTTP upload reaches English SRT with real media tools, only a loopback mod
       else if (tool === 'submit_english') payload = { translations: input.targetRows.map(r => ({ id: r.id, en: 'The market rose today.' })), protectedFacts: [], notes: [] };
       else if (tool === 'submit_english_review') payload = { checkedIds: input.targetRows.map(r => r.id), patches: [], issues: [] };
       else if (tool === 'submit_track_audit') {
-        assert.equal(input.generalTranslationRules.version,'2026-10-27.general.3');
+        assert.equal(input.generalTranslationRules.version,'2026-10-28.general.2');
         assert.ok(input.generalTranslationRules.rules.some(r=>r.id==='retest-conditionality'));
         payload = { checkedIds: input.targetRows.map(r => r.id), issues: [] };
       }
@@ -110,9 +110,9 @@ test('HTTP upload reaches English SRT with real media tools, only a loopback mod
     assert.equal(checkpoint.media.asrUpload, 'mp3-64k-mono16k-v1');
     const sourceRules=JSON.parse(await fs.readFile(path.join(app.data,id,'lexicon-snapshot.json'),'utf8'));
     const translationRules=JSON.parse(await fs.readFile(path.join(app.data,id,'cantones-rules-snapshot.json'),'utf8'));
-    assert.equal(sourceRules.version,'2026-10-27.1.general');
+    assert.equal(sourceRules.version,'2026-10-28.1.general');
     assert.ok(sourceRules.reviewGuidance.some(g=>g.id==='chart-quantity-scale'));
-    assert.equal(translationRules.rules.version,'2026-10-27.general.3');
+    assert.equal(translationRules.rules.version,'2026-10-28.general.2');
     const before = calls.length;
     const finished = await fetch(app.origin + '/cantones/api/jobs/' + id + '/resume', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
     assert.equal(finished.status, 400); assert.equal(calls.length, before);
@@ -124,6 +124,24 @@ test('HTTP upload reaches English SRT with real media tools, only a loopback mod
     assert.deepEqual(JSON.parse(await fs.readFile(path.join(app.data,id,'lexicon-snapshot.json'),'utf8')),sourceRules);
     assert.deepEqual(JSON.parse(await fs.readFile(path.join(app.data,id,'cantones-rules-snapshot.json'),'utf8')),translationRules);
     assert.equal(calls.filter(x => x === 'asr').length, 1); assert.deepEqual(failures, []);
+    assert.equal(app.config.maxBytes, null); assert.equal(app.config.maxMinutes, null);
+    const mediaPolicy = await fetch(app.origin + '/cantones/media-policy.mjs');
+    assert.equal(mediaPolicy.status, 200); await mediaPolicy.text();
+    // A large declared original must enter streaming upload instead of being
+    // rejected at 512 MB. Send one byte, prove the worker reserved that upload,
+    // then abort: no giant allocation, full disk write or provider call.
+    let earlyStatus = null;
+    const large = http.request(app.origin + '/cantones/api/jobs', { method: 'POST', headers: {
+      'content-type': 'application/octet-stream', 'content-length': String(512*1024*1024+1),
+      'x-filename': 'Large.mp4', 'x-recognition-mode': 'yue', 'x-workflow-profile': 'cantones',
+    } });
+    large.on('error', () => {}); large.on('response', response => { earlyStatus = response.statusCode; response.resume(); });
+    try {
+      large.write('x'); await pause(150); assert.equal(earlyStatus, null);
+      const reserved = await fetch(app.origin + '/cantones/api/jobs', { method: 'POST', headers: { 'content-type': 'application/octet-stream', 'x-filename': 'Another.mp4', 'x-workflow-profile': 'cantones' }, body: Buffer.alloc(0) });
+      assert.equal(reserved.status, 400); assert.match((await reserved.json()).error, /已有任务正在运行/);
+      assert.equal(calls.length, before);
+    } finally { large.destroy(); }
     const failed = await start({ FFPROBE_PATH: path.join(folder, 'missing-ffprobe') }); broken = failed.proc;
     assert.equal(failed.config.asr, true); assert.equal(failed.config.translation, true);
     assert.equal(failed.config.configured, false); assert.equal(failed.config.mediaStatus.ffprobe.reason, 'not-found');

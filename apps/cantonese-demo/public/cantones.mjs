@@ -1,4 +1,5 @@
 import { message, errorKey, serviceStateKey } from './cantones-i18n.mjs';
+import { isSupportedVideoFile } from './media-policy.mjs';
 
 const $ = id => document.getElementById(id), API = '/cantones/api';
 const state = { locale: 'zh-Hant', file: null, job: null, project: null, packet: null, busy: false, dirty: false, all: false, ready: false, config: null, timer: null, epoch: 0, stage: '', retryAt: null, notice: null, localMedia: null };
@@ -71,7 +72,7 @@ function reset() {
 function chooseFile(file) {
   if (!file || state.busy) return;
   if (state.dirty) { notice('unsaved'); return; }
-  if (!/\.(mp4|mov|mkv|webm)$/iu.test(file.name) || !file.size || file.size > 512 * 1024 * 1024) { notice('invalidFile'); return; }
+  if (!isSupportedVideoFile(file)) { notice('invalidFile'); return; }
   reset(); state.file = file;
   $('file-name').removeAttribute('data-i18n'); $('file-name').textContent = file.name;
   // Keep the preview below the upload card as soon as processing begins.
@@ -92,7 +93,7 @@ function warningMessage(warning) {
 }
 function evidence(row, items) {
   const frames = [...new Set([...(row.frameIds || []), ...items.flatMap(i => i.frameIds || [])])];
-  const changes = [...(row.terminologyChanges || []), ...(row.changes || []), ...(row.englishPatches || [])];
+  const changes = [...(row.terminologyChanges || []), ...(row.changes || []), ...(row.englishPatches || []), ...(row.sourceGroundedEnglishRepairs || [])];
   return `<details><summary>${t('evidence')}</summary>${items.length ? `<ul>${items.map(i => `<li>${escape(i.text || '')}${i.suggestion ? ` → ${escape(i.suggestion)}` : ''}<br>${escape(i.reason || i.message || '')}</li>`).join('')}</ul>` : ''}
     ${changes.map(c => `<p class="changes">${escape(c.from)} → ${escape(c.to)}<br>${escape(c.reason)}</p>`).join('')}
     <div class="frame-list">${frames.filter(id => /^f\d{6}$/u.test(id)).map(id => `<a href="${API}/jobs/${state.job}/frame?id=${id}" target="_blank" rel="noopener"><img src="${API}/jobs/${state.job}/frame?id=${id}" alt="${escape(id)}" loading="lazy"></a>`).join('')}</div></details>`;

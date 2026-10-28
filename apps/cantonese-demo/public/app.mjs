@@ -141,7 +141,7 @@ function selectFile(file) {
   if (state.busy) return;
   if (state.dirty) { toast('请先保存修订或导出项目 JSON，再切换素材'); return; }
   if (!file) return;
-  if (file.size > 512 * 1024 * 1024) { toast('文件超过 512 MB'); return; }
+  if (!file.size) { toast('媒体文件为空'); return; }
   if (!/\.(mp4|mov|mkv|webm|m4a|mp3|wav|aac|flac|ogg)$/i.test(file.name)) { toast('请选择支持的视频或音频文件'); return; }
   resetResult(); releaseLocalMedia(); state.file = file;
   $('file-name').textContent = file.name; $('file-meta').textContent = `${(file.size / 1024 / 1024).toFixed(1)} MB · 点击可更换`;

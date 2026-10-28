@@ -13,6 +13,7 @@ import { ensureWrittenChinese } from './written-chinese.mjs';
 import { criticalTranslationIssues } from './translation-critical-checks.mjs';
 import { semanticContracts } from './semantic-repair.mjs';
 import { visualInventory } from './visual-inventory.mjs';
+import { sourceMediaDuration, mediaWorkTimeoutMs } from './public/media-policy.mjs';
 
 // Keep informational notes separate from unresolved words in the simple demo.
 // Missing visual corroboration alone is not a transcription error.
@@ -110,14 +111,13 @@ export async function prepareSource(dir, config, update, { retryUnknown = false,
     await update('extracting', '提取音轨，保留视频时间与静音', 8);
     const source = path.join(dir, job.sourceFile);
     const probe = JSON.parse(await runProcess(config.ffprobe, ['-v', 'error', '-show_format', '-show_streams', '-of', 'json', source]));
-    const duration = Number(probe.format?.duration);
-    if (!Number.isFinite(duration) || duration <= 0 || duration > 1800 || !probe.streams?.some(s => s.codec_type === 'audio')) throw new Error('需要有音轨、时长不超过30分钟的媒体');
+    const duration = sourceMediaDuration(probe);
     const audio = path.join(dir, 'audio.flac');
-    await runProcess(config.ffmpeg, ['-v', 'error', '-y', '-copyts', '-start_at_zero', '-i', source, '-map', '0:a:0', '-vn', '-af', 'aresample=async=1:first_pts=0', '-ac', '1', '-ar', '16000', '-c:a', 'flac', audio]);
+    await runProcess(config.ffmpeg, ['-v', 'error', '-y', '-copyts', '-start_at_zero', '-i', source, '-map', '0:a:0', '-vn', '-af', 'aresample=async=1:first_pts=0', '-ac', '1', '-ar', '16000', '-c:a', 'flac', audio], mediaWorkTimeoutMs(duration));
     const audioProbe = JSON.parse(await runProcess(config.ffprobe, ['-v', 'error', '-show_format', '-of', 'json', audio]));
     const audioDuration = Number(audioProbe.format?.duration);
     if (!Number.isFinite(audioDuration) || Math.abs(audioDuration - duration) > 0.5) throw new Error('音轨与视频时长偏差超过0.5秒，需检查媒体起始偏移');
-    const silences = await runProcess(config.ffmpeg, ['-hide_banner', '-i', audio, '-af', 'silencedetect=noise=-35dB:d=0.4', '-f', 'null', '-'], 180000, true);
+    const silences = await runProcess(config.ffmpeg, ['-hide_banner', '-i', audio, '-af', 'silencedetect=noise=-35dB:d=0.4', '-f', 'null', '-'], mediaWorkTimeoutMs(duration), true);
     const pauses = [...silences.matchAll(/silence_end: ([\d.]+) \| silence_duration: ([\d.]+)/gu)].map(m => Number(m[1]) - Number(m[2]) / 2);
     cp.media = { duration, audioDuration, video: probe.streams.some(s => s.codec_type === 'video'),
       asrUpload: 'mp3-64k-mono16k-v1', chunks: chunkPlan(audioDuration, pauses, { maxSeconds: 120, pauseWindow: 30 }) }; await save();
@@ -133,7 +133,7 @@ export async function prepareSource(dir, config, update, { retryUnknown = false,
         if (error.code !== 'ENOENT') throw error;
         // Cut from the lossless master; never accumulate offsets by concatenating
         // padded MP3 durations. The source interval remains the time authority.
-        await runProcess(config.ffmpeg, ['-v', 'error', '-nostdin', '-n', '-i', path.join(dir, 'audio.flac'), '-ss', String(chunk.offset), '-t', String(chunk.duration), ...encoding.args, file]);
+        await runProcess(config.ffmpeg, ['-v', 'error', '-nostdin', '-n', '-i', path.join(dir, 'audio.flac'), '-ss', String(chunk.offset), '-t', String(chunk.duration), ...encoding.args, file], mediaWorkTimeoutMs(duration));
       }
       const encoded = JSON.parse(await runProcess(config.ffprobe, ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', file]));
       const stream = encoded.streams?.find(s => s.codec_type === 'audio');

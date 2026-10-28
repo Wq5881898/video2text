@@ -90,7 +90,7 @@ test('unresolved sector source is distinguished from a proposed English correcti
 });
 
 test('reusable rules are versioned and contain guidance rather than this film reference answers',()=>{
-  assert.equal(lexicon.version,'2026-10-27.1'); assert.equal(rules.version,'2026-10-27.general.3');
+  assert.equal(lexicon.version,'2026-10-28.1'); assert.equal(rules.version,'2026-10-28.general.2');
   assert.equal(new Set(lexicon.rules.map(r=>r.id)).size,lexicon.rules.length);
   assert.equal(new Set(rules.rules.map(r=>r.id)).size,rules.rules.length);
   for(const id of ['bollinger-position','retest-conditionality','source-chart-scale-conflict','atomic-numbers-and-units'])assert.ok(rules.rules.some(r=>r.id===id));

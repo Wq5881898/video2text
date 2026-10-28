@@ -1,5 +1,5 @@
 {
-  "version": "2026-10-27.1",
+  "version": "2026-10-28.1",
   "purpose": "文字模型审定阶段的常见误识别学习词库；逐次匹配，禁止无语境全局替换。",
   "precisionPolicy": {
     "allowEvidenceBackedPrecision": true,
@@ -450,20 +450,21 @@
       "category": "term",
       "severity": "critical",
       "status": "confirmed",
-      "source": "新视频源稿审阅得到的通用提示；在盲测封存后记录，未回填本次封存稿。新任务仍须满足证据门槛。",
+      "source": "已确认金融板块专名；同对象同期图明确Consumer Staples或XLP才作视觉纠正，普通stable形容词不替换。",
       "id": "consumer-staples",
       "canonical": "Consumer Staples",
       "pattern": "\\bconsumer\\s+stable\\b",
-      "context": "板块|板塊|收息|Walmart|XLP|sector",
+      "context": "板块|板塊|收息|派息|股票|Walmart|XLP|sector",
       "mode": "visual",
-      "evidencePattern": "(?:Consumer|Cons)\\s+Staples|XLP.*Staples",
+      "evidencePattern": "(?:Consumer|Cons)\\s+Staples|\\bXLP\\b",
       "examples": [
         "consumer stable"
       ],
       "correctAliases": [
         "Consumer Staples",
         "consumer staples"
-      ]
+      ],
+      "evidenceMappingSource": "https://www.ssga.com/us/en/individual/etfs/state-street-consumer-staples-select-sector-spdr-etf-xlp"
     },
     {
       "category": "term",
@@ -776,6 +777,24 @@
         "七萬三千五至七萬五"
       ],
       "source": "图表数字量级复核触发器，不内置目标点位，不自动缩放。参考与转写相同也可能共同出错。"
+    },
+    {
+      "id": "gap-fill-homophone",
+      "canonical": "fill",
+      "pattern": "\\bfeel\\b",
+      "context": "(?:gap|缺口|跳空).{0,24}(?:唔|未|無法|无法|不能).{0,12}feel",
+      "contextScope": "row",
+      "mode": "context",
+      "status": "confirmed",
+      "severity": "critical",
+      "category": "term",
+      "examples": [
+        "跳空嘅gap位都唔能夠feel到"
+      ],
+      "correctAliases": [
+        "fill"
+      ],
+      "source": "回补缺口的固定搭配；只针对同句否定回补动作，不改变缺口方向、点位或普通I feel表达。"
     }
   ],
   "documentCorrections": [

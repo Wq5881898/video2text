@@ -91,8 +91,9 @@ at `/app/apps/cantonese-demo/.data`. They are excluded from Git and image builds
 Keep this directory when rebuilding/restarting. Demo retention is manual; the
 old Worker cleanup service does not manage these demo files.
 
-The simple flow accepts up to 512 MiB and 30 minutes and processes one job at a
-time. Its raw upload uses the direct Caddy/Node route, not the original tus
+The simple flow has no application-level original-video size or duration ceiling
+and processes one job at a time. Uploads stream to disk without a whole-body
+buffer or an upload-duration timeout. Its raw upload uses the direct Caddy/Node route, not the original tus
 resumable uploader. Unknown provider outcomes require explicit retry and can
 have duplicate billing; successful recorded steps are reused. Source IDs,
 timings, rule snapshots, image evidence, source/English revisions and model
@@ -106,7 +107,7 @@ unattended reference-level translation. The production route remains
 
 1. Upload the original video. Keep the lossless audio master and source identity;
    submit the bounded MP3 chunks through the existing MiniMax ASR adapter.
-2. `financial-error-lexicon.json` **2026-10-27.1** supplies 43 source rules plus
+2. `financial-error-lexicon.json` **2026-10-28.1** supplies 44 source rules plus
    five reusable review instructions. Confirmed, context-matched spelling errors
    such as NYSE `bread` → `breadth` and `我的睇翻` → `我哋睇翻` can be corrected.
    Sector `呢緊` → possible `lead 緊` and quantity-scale conflicts require review;
@@ -152,3 +153,45 @@ historical first-install/Caddy migration commands for a dictionary update.
 Verify the running container's rule versions and normalized runtime fingerprint
 against the delivery commit; preserve all task data. No **148**, shared Caddy,
 worker, tusd, Sub2API, audit proxy, DNS or Tunnel change is required.
+
+## Serial quality release (2026-10-28)
+
+The working version starts from the pre-throughput commit `b9e2397`: one source
+batch and one English batch at a time, with the original small paragraph limits.
+The throughput experiment is retained on a separate branch and is not part of
+this release. Draft, review and audit all remain enabled.
+
+New English jobs freeze `source-guard-v2` in their rules snapshot. It derives
+critical yield quantities and election conditions from approved source text,
+rejects missing facts or tenfold unit shifts, and applies linked cross-cue
+corrections atomically. Source-supported year relocation is allowed only when
+the entire linked group preserves the year and its source evidence. Unverified
+financial-value or unit changes remain held, along with dependent edits.
+
+The source lexicon adds a narrow gap `feel`/`fill` context and recognizes an
+original-frame XLP label as Consumer Staples identity evidence. English checks
+distinguish money staying inside from inflow, preserve gap filling rather than
+mere touching, and normalize a sector only from approved source authority.
+Every automatic English repair is recorded and visible in the evidence panel.
+Rules are **2026-10-28.general.2**; no reference subtitle or per-film numeric
+answer is supplied to translation.
+Decimal amounts remain whole, a neckline target remains a target, and falling
+rates cannot be attached to a recovering sector as a sector decline. One shared
+three-stage paragraph helper serves both normal processing and targeted checks.
+
+Existing task snapshots and cached request shapes remain unchanged. The completed
+230-cue serial job was replayed with the new code and network calls forbidden:
+source and English outputs were identical and no request was resent. A new
+quality revision uses new snapshots rather than silently upgrading old results.
+
+Original media limits are reported as `maxBytes: null`, `maxMinutes: null`.
+Empty, unreadable or audio-less media still fail validation. Audio requests
+remain bounded and contiguous; service request limits do not limit original
+video length. Long-video periodic frame coverage is retained without recursive
+overflow at 240 frames. Local media-processing timeouts scale with duration.
+The old upload-domain tus service is a different route and is not changed.
+
+This remains an assisted-production draft workflow. A source/plot conflict,
+unclear index number or actual speech repetition may still require listening;
+same-model audits, matching a reference and a clean deterministic guard are not
+full-film acceptance. See [release evidence and validation scope](../../docs/CANTONES_SERIAL_QUALITY_20261028.md).

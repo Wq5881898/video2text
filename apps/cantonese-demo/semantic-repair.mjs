@@ -5,13 +5,13 @@ const pick=r=>({id:r.id,start:r.start,end:r.end,yue:r.yue});
 
 // The approved source is authoritative. Raw ASR, rejected edits and OCR remain
 // in the source review ledger; they must not compete with it during translation.
-export function approvedTranslationInput(sourceRows,targets,{generalTranslationRules={},semanticPreservationPolicy={},sourceWarnings=[]}={}){
+export function approvedTranslationInput(sourceRows,targets,{generalTranslationRules={},semanticPreservationPolicy={},sourceWarnings=[],guardedCausality=false}={}){
  const ids=new Set(targets.map(r=>r.id));
  if(targets.some(t=>!sourceRows.some(s=>s.id===t.id&&s.yue===t.yue&&s.start===t.start&&s.end===t.end)))throw Error('Targets differ from approved source');
- return {targetRows:targets.map(pick),completeSource:sourceRows.map(pick),sourceAuthority:'Only targetRows/completeSource are the approved transcript. Do not reconstruct it from older audio/OCR candidates.',sourceWarnings:sourceWarnings.filter(w=>ids.has(w.id)).map(w=>({id:w.id,reason:String(w.reason??w.warning??'Source meaning requires review')})),generalTranslationRules,semanticPreservationPolicy,semanticContracts:semanticContracts(targets),referenceIncluded:false};
+ return {targetRows:targets.map(pick),completeSource:sourceRows.map(pick),sourceAuthority:'Only targetRows/completeSource are the approved transcript. Do not reconstruct it from older audio/OCR candidates.',sourceWarnings:sourceWarnings.filter(w=>ids.has(w.id)).map(w=>({id:w.id,reason:String(w.reason??w.warning??'Source meaning requires review')})),generalTranslationRules,semanticPreservationPolicy,semanticContracts:semanticContracts(targets,{guardedCausality}),referenceIncluded:false};
 }
 
-export function semanticContracts(rows){
+export function semanticContracts(rows,{guardedCausality=false}={}){
  const all=tidy(text(rows)),contracts=[];
  const add=(type,anchors,requirement)=>{const selected=anchors??rows;contracts.push({id:type+'-'+selected[0].id,type,sourceIds:selected.map(r=>r.id),sourceQuote:text(selected),requirement});};
  if(/(?<!唔|不|未)(?:代表|意味|反映|显示|顯示).{0,30}(?:唔系|唔係|唔是|不是).{0,90}(?:好似|想|觉得|覺得).{0,25}(?:咁|那[么麼])|(?<!唔|不|未)(?:代表|意味).{0,30}(?:冇|唔)[^。]{0,30}(?:咁|那[么麼])/iu.test(all))add('asserted-negative-comparison',null,'The source positively asserts what this indicates, then negates the market property inside an as…as comparison. Represent as ASSERT(INDICATES, NOT(AS(property, comparator))), not NOT(INDICATES,…). Keep the negative attached to the property/comparison, not to means/shows.');
@@ -20,6 +20,7 @@ export function semanticContracts(rows){
   if(/(?<!第)(?:[二三四五六七八九十百\d]+)个?(?:交易天|交易日)/u.test(tidy(r.yue))&&!/第.{0,8}(?:交易天|交易日)/u.test(r.yue))add('cardinal-trading-days',[r],'The number modifies a count of trading days (cardinal), not the nth trading day (ordinal). Preserve a supplied origin if any. If the origin or relation is missing, state that in the review note rather than inventing an ordinal date or countdown.');
  }
  if(/(?:接近|近乎).{0,70}exhaustion|冇乜[气氣][剩静靜]/iu.test(all))add('remaining-momentum',null,'Near exhaustion/little strength left does not assert all momentum is gone; the homophone 氣靜 in this fixed expression is a source-review risk, not a claim about silence.');
+ if(guardedCausality&&/(?:之前|先前).{0,8}[嘅的]?地[產产][版板][塊块]/u.test(all)&&/因[為为]息口向下跌/u.test(all)&&/[開开]始.{0,8}表[現现]好/u.test(all))add('rate-driven-sector-recovery',null,'The sector previously underperformed and is now STARTING TO IMPROVE BECAUSE INTEREST RATES FALL. Falling modifies rates, not the sector. Do not add a current fall of the sector. Keep the causal link across cue boundaries.');
  if(/同.{0,20}(?:差不多|差唔多).{0,20}(?:回吐|回调|回調|test)|(?:差不多|差唔多).{0,20}同.{0,20}(?:回吐|回调|回調|test)/iu.test(all))add('similarity-not-amount',null,'Keep similarity to the named comparator separate from the amount retraced. Do not add all/nearly all unless the source specifies that amount and its interval.');
  return contracts;
 }

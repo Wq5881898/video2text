@@ -16,6 +16,7 @@ import { subtitleBundle } from './subtitle-bundle.mjs';
 import { preflight, inspectServices, validatePreflightConfig, assertServiceAvailability } from './preflight.mjs';
 import { providerErrorStatus } from './provider-runtime.mjs';
 import { CANTONES_PROFILE, runCantones, sourceQuestions, projectRevision, confirmCantonesSource, saveCantonesEnglish, cantonesDelivery, englishWarnings } from './cantones-workflow.mjs';
+import { MEDIA_UPLOAD_LIMITS } from './public/media-policy.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 for (const file of [path.join(ROOT, '.env'), path.join(ROOT, '../web/.env.local'), path.join(ROOT, '../web/.env')]) {
@@ -24,7 +25,6 @@ for (const file of [path.join(ROOT, '.env'), path.join(ROOT, '../web/.env.local'
 const DATA = process.env.CANTONES_DATA_DIR || path.join(ROOT, '.data');
 const config = loadConfig(ROOT);
 const port = Number(process.env.DEMO_PORT || 4178);
-const MAX_BYTES = 512 * 1024 * 1024;
 const publicOrigin = process.env.CANTONES_PUBLIC_ORIGIN ? new URL(process.env.CANTONES_PUBLIC_ORIGIN).origin : null;
 const localOrigins = [`http://127.0.0.1:${port}`, `http://localhost:${port}`];
 const allowedOrigins = publicOrigin ? [publicOrigin, ...localOrigins] : localOrigins;
@@ -103,6 +103,7 @@ const staticFiles = new Map([
   ['/cantones', ['cantones.html', 'text/html']], ['/cantones/', ['cantones.html', 'text/html']],
   ['/cantones.mjs', ['cantones.mjs', 'text/javascript']], ['/cantones-i18n.mjs', ['cantones-i18n.mjs', 'text/javascript']],
   ['/cantones.css', ['cantones.css', 'text/css']],
+  ['/media-policy.mjs', ['media-policy.mjs', 'text/javascript']],
 ]);
 const server = http.createServer(async (req, res) => {
   try {
@@ -119,7 +120,7 @@ const server = http.createServer(async (req, res) => {
       if (rest !== '/') url.pathname = rest;
     }
     if (req.method === 'GET' && url.pathname === '/api/config') {
-      send(res, 200, { configured: Boolean(config.asr.apiKey && config.translation.apiKey && toolsReady.every(Boolean)), asr: Boolean(config.asr.apiKey), recognitionModel: config.asr.model, workflowVersion: WORKFLOW_VERSION, gladia: Boolean(config.gladiaKey), translation: Boolean(config.translation.apiKey), mediaTools: toolsReady.every(Boolean), mediaStatus: publicMediaStatus(mediaStatus), translationModel: config.translation.model, services: await inspectServices(config), maxBytes: MAX_BYTES, maxMinutes: 30 }); return;
+      send(res, 200, { configured: Boolean(config.asr.apiKey && config.translation.apiKey && toolsReady.every(Boolean)), asr: Boolean(config.asr.apiKey), recognitionModel: config.asr.model, workflowVersion: WORKFLOW_VERSION, gladia: Boolean(config.gladiaKey), translation: Boolean(config.translation.apiKey), mediaTools: toolsReady.every(Boolean), mediaStatus: publicMediaStatus(mediaStatus), translationModel: config.translation.model, services: await inspectServices(config), ...MEDIA_UPLOAD_LIMITS }); return;
     }
     if (req.method === 'POST' && url.pathname === '/api/preflight') {
       if (running.size) throw new Error('已有任务正在运行，请等待完成');
@@ -147,7 +148,6 @@ const server = http.createServer(async (req, res) => {
       const filename = path.basename(decodeURIComponent(String(req.headers['x-filename'] || 'video.mp4'))).slice(0, 180);
       const ext = path.extname(filename).toLowerCase();
       if (!['.mp4', '.mov', '.mkv', '.webm', '.m4a', '.mp3', '.wav', '.aac', '.flac', '.ogg'].includes(ext)) throw new Error('不支持此媒体格式');
-      if (Number(req.headers['content-length']) > MAX_BYTES) throw new Error('文件超过 512 MB');
       const mode = String(req.headers['x-recognition-mode'] || 'yue');
       if (mode !== 'yue') throw new Error('新版流程使用明确的粤语识别模式');
       const glossary = Buffer.from(String(req.headers['x-glossary'] || ''), 'base64').toString('utf8');
@@ -160,8 +160,8 @@ const server = http.createServer(async (req, res) => {
       try {
         await fs.mkdir(dir, { recursive: true });
         let size = 0; const hash = createHash('sha256');
-        const limit = new Transform({ transform(chunk, _encoding, callback) { size += chunk.length; hash.update(chunk); callback(size > MAX_BYTES ? new Error('文件超过 512 MB') : null, chunk); } });
-        await pipeline(req, limit, createWriteStream(path.join(dir, `source${ext}`)));
+        const measure = new Transform({ transform(chunk, _encoding, callback) { size += chunk.length; hash.update(chunk); callback(null, chunk); } });
+        await pipeline(req, measure, createWriteStream(path.join(dir, `source${ext}`)));
         if (!size) throw new Error('媒体文件为空');
         await writeJson(path.join(dir, 'job.json'), { id, filename, sourceFile: `source${ext}`, sourceHash: hash.digest('hex'), createdAt: new Date().toISOString(), mode, glossary, workflowVersion: WORKFLOW_VERSION, ...(profile ? { profile } : {}) });
         await writeJson(path.join(dir, 'status.json'), { id, stage: 'queued', message: '文件上传完成', progress: 3 });
@@ -261,5 +261,5 @@ const server = http.createServer(async (req, res) => {
     if (!res.headersSent && !res.destroyed) send(res, error.retryAt ? 503 : 400, { error: error.message, ...providerErrorStatus(error) });
   }
 });
-server.requestTimeout = 30 * 60000;
+server.requestTimeout = 0;
 server.listen(port, process.env.CANTONES_BIND || '127.0.0.1', () => console.log(`Cantonese demo: http://127.0.0.1:${port}/cantones\nMiniMax ASR: ${config.asr.apiKey ? 'configured' : 'not configured'}; translation: ${config.translation.apiKey ? 'configured' : 'not configured'}`));

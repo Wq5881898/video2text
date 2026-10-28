@@ -1,5 +1,5 @@
 {
-  "version": "2026-10-27.general.3",
+  "version": "2026-10-28.general.2",
   "scope": "Reusable source-grounded translation checks, no video-specific answers or quantities.",
   "rules": [
     {
@@ -121,6 +121,42 @@
     {
       "id": "justification-versus-authority",
       "guidance": "In an inflation-based rationale for a rate decision, 有權 may mean having grounds/justification; do not automatically introduce institutional authority. Preserve literal authority when that is actually the subject."
+    },
+    {
+      "id": "linked-cue-patches",
+      "guidance": "Cross-cue relocation repairs form one linked transaction. Preserve the event, condition, time and numbers as a whole; never apply only the non-numerical half of a relocation. Checked IDs do not prove every clause survived."
+    },
+    {
+      "id": "annual-cantonese-yield",
+      "guidance": "In explicit annual bond-yield Cantonese context, 厘 can express a percent-level yield: preserve the same spoken scale throughout the video. Monthly interest and other units are distinct. Use supplied sourceQualityFacts; do not divide by ten or substitute plot values. If ambiguous, flag source review."
+    },
+    {
+      "id": "inside-not-inflow",
+      "guidance": "資金仍然喺入邊輪轉 describes money staying and rotating within the market; it does not establish new inflow. Distinguish a position inside from a direction into and preserve explicit inflow where spoken."
+    },
+    {
+      "id": "gap-fill-not-touch",
+      "guidance": "In gap commentary, fill a gap means closing/filling the gap, not merely touching/reaching a level. Do not infer gap-up, gap-down or overnight unless the approved source establishes it."
+    },
+    {
+      "id": "confirmed-sector-consistency",
+      "guidance": "Consumer Staples is a sector name; an approved same-object source correction must recur consistently in English. Do not copy unresolved consumer stable as a verified sector name or globally replace ordinary stable."
+    },
+    {
+      "id": "cue-facts-not-counts",
+      "guidance": "Before return, join adjacent English and verify every source clause occurs once. A cue may not be shifted onto the next source claim. Flag particle-only timing fragments rather than duplicating a substantive sentence to fill each ID."
+    },
+    {
+      "id": "spoken-decimal-integrity",
+      "guidance": "A spoken decimal amount is one number: do not split its final digit into another amount or introduce an alternative percentage. Use sourceQualityFacts. 個點/个点 does not alone establish percent: preserve points for an index point change; if uncertain, flag the unit rather than inventing a percentage. A chart may independently support the same object and amount but must not silently replace the approved spoken claim."
+    },
+    {
+      "id": "sector-rates-causal-scope",
+      "guidance": "A previously weak sector may start to recover because rates fall. Previously weak modifies earlier performance; falling modifies interest rates. Do not invent a current decline of the sector when the source says it now improves. Read the whole causal sentence across cue boundaries."
+    },
+    {
+      "id": "neckline-target-versus-crossing",
+      "guidance": "A rebound back to a neckline is a target/retest, not necessarily above or through it. Preserve an explicit breakthrough when spoken. Do not turn 去/到 into an unspoken threshold crossing."
     }
   ]
 }

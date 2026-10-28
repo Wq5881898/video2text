@@ -15,7 +15,7 @@ export function inventoryTimes(duration, scenes = []) {
   const selected = [];
   for (const t of times) if (!selected.length || t - selected.at(-1) >= 2) selected.push(Math.round(t * 10) / 10);
   // Always keep the periodic samples; bound scene-heavy videos on the demo worker.
-  if (selected.length > 240) return inventoryTimes(duration);
+  if (selected.length > 240 && scenes.length) return inventoryTimes(duration);
   return selected.length ? selected : [0];
 }
 

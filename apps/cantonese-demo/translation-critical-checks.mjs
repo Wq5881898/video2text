@@ -59,7 +59,7 @@ export function criticalTranslationIssues(rows) {
     }
     if (/^[.。]\s*[A-Za-z]/u.test(row.en)) add(row,'en','orphan-leading-period','英文句首有孤立句点；结合上一条清理标点，不删除实质内容。','style');
     const duration=row.en.match(/\b(?:for|over)\s+(?:almost\s+|nearly\s+)?(?:\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten)(?:\s+and\s+a\s+half)?\s+(months?|weeks?|years?)\b/iu);
-    const sourceUnit=duration&&(/^month/iu.test(duration[1])?/月|month/iu:/^week/iu.test(duration[1])?/周|週|礼拜|禮拜|week/iu:/年|year/iu);
+    const sourceUnit=duration&&(/^month/iu.test(duration[1])?/月|month/iu:/^week/iu.test(duration[1])?/星期|周|週|礼拜|禮拜|week/iu:/年|year/iu);
     if (duration && !sourceUnit.test(localSource)) {
       add(row,'en','unsupported-duration','邻近源句没有年月周时长，英文却新增确定持续时间；不清楚的近音词不能被补成具体月份。','critical');
     }
